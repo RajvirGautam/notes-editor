@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Notes Deskewer</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
+    --txt:#e6e9ef; --mut:#9aa3b2; --acc:#5b9dff; --acc2:#3a6fd8;
+    --good:#3ecf8e; --warn:#f0a35e;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--txt);
+    font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  header{display:flex;align-items:center;gap:12px;padding:12px 18px;
+    border-bottom:1px solid var(--line);background:var(--panel)}
+  header h1{font-size:15px;margin:0;font-weight:600;letter-spacing:.2px}
+  header .sub{color:var(--mut);font-size:12px}
+  .grow{flex:1}
+  button{font:inherit;color:var(--txt);background:var(--panel2);
+    border:1px solid var(--line);border-radius:7px;padding:7px 12px;cursor:pointer}
+  button:hover{border-color:#3a4152;background:#232833}
+  button.primary{background:var(--acc2);border-color:var(--acc2);color:#fff;font-weight:600}
+  button.primary:hover{background:var(--acc)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .wrap{display:flex;height:calc(100vh - 53px)}
+  /* left rail */
+  #rail{width:250px;flex:0 0 250px;border-right:1px solid var(--line);
+    background:var(--panel);overflow-y:auto;--thumbw:150px}
+  #railHead{position:sticky;top:0;z-index:5;background:var(--panel);
+    border-bottom:1px solid var(--line);padding:10px 12px;display:flex;
+    align-items:center;gap:8px}
+  #railHead .zi{color:var(--mut);font-size:14px;flex:0 0 auto}
+  #railHead input[type=range]{flex:1;accent-color:var(--acc)}
+  #railBody{padding:10px}
+  .filegrp{margin-bottom:14px}
+  .filename{font-size:12px;color:var(--mut);padding:2px 4px 6px;
+    word-break:break-word;border-bottom:1px solid var(--line);margin-bottom:8px}
+  .cards{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
+  .pcard{width:var(--thumbw);cursor:pointer;border-radius:8px;padding:4px;
+    border:2px solid transparent;transition:border-color .12s,background .12s}
+  .pcard:hover{background:var(--panel2)}
+  .pcard.active{border-color:var(--acc);background:#1b2534}
+  .pthumb{position:relative;width:100%;background:#fff;border-radius:5px;
+    overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.45);line-height:0;
+    aspect-ratio:1/1.3;display:flex;align-items:center;justify-content:center}
+  .pthumb img{width:100%;height:100%;object-fit:contain;background:#fff}
+  .pthumb .ph{color:#bbb;font-size:11px}
+  .pcap{display:flex;align-items:center;justify-content:center;gap:6px;
+    margin-top:5px;color:var(--mut);font-size:11px}
+  .pcap .dot{width:6px;height:6px;border-radius:50%;background:var(--line);flex:0 0 auto}
+  .pcard.edited .pcap .dot{background:var(--good)}
+  .pcard.active .pcap{color:var(--txt)}
+  /* center */
+  #stage{flex:1;display:flex;flex-direction:column;min-width:0}
+  #canvasArea{flex:1;position:relative;overflow:auto;display:flex;
+    align-items:center;justify-content:center;padding:22px;background:#0b0d11}
+  #frame{position:relative;line-height:0;box-shadow:0 6px 30px rgba(0,0,0,.5)}
+  #pageImg{display:block;max-width:100%;max-height:76vh;background:#fff}
+  /* crop overlay */
+  .shade{position:absolute;background:rgba(10,12,16,.62);pointer-events:none}
+  .guide{position:absolute;background:var(--acc);opacity:.9}
+  .guide.h{left:0;right:0;height:2px;cursor:ns-resize}
+  .guide.v{top:0;bottom:0;width:2px;cursor:ew-resize}
+  .guide .grip{position:absolute;background:var(--acc);border:2px solid #fff;
+    border-radius:3px}
+  .guide.h .grip{left:50%;top:-5px;transform:translateX(-50%);width:34px;height:10px}
+  .guide.v .grip{top:50%;left:-5px;transform:translateY(-50%);width:10px;height:34px}
+  .guide,.guide *{pointer-events:auto}
+  /* right controls */
+  #panel{width:280px;flex:0 0 280px;border-left:1px solid var(--line);
+    background:var(--panel);overflow-y:auto;padding:16px}
+  .sec{margin-bottom:20px}
+  .sec h3{margin:0 0 10px;font-size:12px;text-transform:uppercase;
+    letter-spacing:.7px;color:var(--mut);font-weight:600}
+  .row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .row label{width:52px;color:var(--mut);font-size:12px}
+  input[type=number]{width:70px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:6px;color:var(--txt);padding:6px 8px;font:inherit}
+  input[type=range]{flex:1;accent-color:var(--acc)}
+  .btnrow{display:flex;gap:6px;flex-wrap:wrap}
+  .btnrow button{padding:6px 9px;font-size:12px}
+  .anglebig{font-size:24px;font-weight:700;text-align:center;margin:2px 0 8px}
+  .unit{color:var(--mut);font-size:12px}
+  select{background:var(--panel2);border:1px solid var(--line);border-radius:6px;
+    color:var(--txt);padding:6px 8px;font:inherit}
+  /* dropzone */
+  #drop{position:absolute;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:14px;color:var(--mut);
+    text-align:center;padding:30px}
+  #drop.hidden{display:none}
+  #drop .big{font-size:34px}
+  #drop.hot{background:#131a26;color:var(--txt)}
+  #drop .hint{max-width:340px;font-size:13px}
+  .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
+    background:var(--panel2);border:1px solid var(--line);padding:10px 16px;
+    border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.5);z-index:50}
+  .spinner{width:16px;height:16px;border:2px solid var(--line);
+    border-top-color:var(--acc);border-radius:50%;display:inline-block;
+    animation:spin .7s linear infinite;vertical-align:-3px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .muted{color:var(--mut);font-size:12px}
+  /* slider rows in the colour panel */
+  .crow{display:grid;grid-template-columns:1fr auto;align-items:center;
+    gap:3px 8px;margin-bottom:10px}
+  .crow span:first-child{color:var(--mut);font-size:12px}
+  .crow input[type=range]{grid-column:1/3;width:100%}
+  /* before/after toggle */
+  button.toggle.active{background:var(--warn);border-color:var(--warn);
+    color:#1a1200;font-weight:600}
+  #frame.before .guide,#frame.before .shade{display:none}
+  select#cMode{flex:1}
+  #sampleSec.hot{outline:2px dashed var(--acc);outline-offset:4px;border-radius:8px;
+    background:#131a26}
+</style>
+</head>
+<body>
+<header>
+  <h1>Notes Deskewer</h1>
+  <span class="sub" id="jobinfo">Straighten &amp; crop scanned notes — fully local</span>
+  <div class="grow"></div>
+  <button id="addBtn">+ Add PDFs</button>
+  <label class="row" style="margin:0;gap:6px">
+    <span class="unit">Export DPI</span>
+    <select id="dpi">
+      <option>150</option><option selected>200</option><option>300</option>
+    </select>
+  </label>
+  <button id="exportBtn" class="primary" disabled>Export</button>
+</header>
+
+<div class="wrap">
+  <aside id="rail">
+    <div id="railHead">
+      <span class="zi">🔍</span>
+      <input type="range" id="zoom" min="90" max="230" step="5" value="150"
+        title="Thumbnail zoom"/>
+    </div>
+    <div id="railBody"><div class="muted" style="padding:8px">No files yet.</div></div>
+  </aside>
+
+  <section id="stage">
+    <div id="canvasArea">
+      <div id="drop">
+        <div class="big">📄↻</div>
+        <div><strong>Drop scanned note PDFs here</strong></div>
+        <div class="hint">Each page is auto-straightened and its margins auto-detected.
+          Fine-tune the angle and drag the blue guides, then Export.
+          Batch multiple PDFs at once — nothing leaves your computer.</div>
+        <button id="pickBtn" class="primary">Choose PDFs</button>
+      </div>
+      <div id="frame" style="display:none">
+        <img id="pageImg" alt="page preview"/>
+        <div class="shade" id="shTop"></div>
+        <div class="shade" id="shBot"></div>
+        <div class="shade" id="shLeft"></div>
+        <div class="shade" id="shRight"></div>
+        <div class="guide h" id="gTop"><div class="grip"></div></div>
+        <div class="guide h" id="gBot"><div class="grip"></div></div>
+        <div class="guide v" id="gLeft"><div class="grip"></div></div>
+        <div class="guide v" id="gRight"><div class="grip"></div></div>
+      </div>
+    </div>
+    <div style="padding:8px 14px;border-top:1px solid var(--line);display:flex;
+         align-items:center;gap:12px;background:var(--panel)">
+      <button id="prevBtn">‹ Prev</button>
+      <span id="pageLabel" class="muted">—</span>
+      <button id="nextBtn">Next ›</button>
+      <div class="grow"></div>
+      <button id="beforeBtn" class="toggle" title="Toggle original vs. corrected (all pages)">👁 Show original</button>
+      <span id="editState" class="muted"></span>
+    </div>
+  </section>
+
+  <aside id="panel">
+    <div class="sec">
+      <h3>Tilt correction</h3>
+      <div class="anglebig"><span id="angleVal">0.0</span><span class="unit">°</span></div>
+      <input type="range" id="angleSlider" min="-12" max="12" step="0.1" value="0"/>
+      <div class="btnrow" style="margin-top:10px">
+        <button data-da="-1">−1°</button>
+        <button data-da="-0.1">−0.1</button>
+        <button data-da="0.1">+0.1</button>
+        <button data-da="1">+1°</button>
+        <button id="angleReset">Auto</button>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h3>Crop margins <span class="unit">(% of page)</span></h3>
+      <div class="row"><label>Top</label>
+        <input type="number" id="mTop" step="0.5" min="0" max="49"/><span class="unit">%</span></div>
+      <div class="row"><label>Bottom</label>
+        <input type="number" id="mBot" step="0.5" min="0" max="49"/><span class="unit">%</span></div>
+      <div class="row"><label>Left</label>
+        <input type="number" id="mLeft" step="0.5" min="0" max="49"/><span class="unit">%</span></div>
+      <div class="row"><label>Right</label>
+        <input type="number" id="mRight" step="0.5" min="0" max="49"/><span class="unit">%</span></div>
+      <div class="btnrow" style="margin-top:6px">
+        <button id="cropAuto">Auto-detect</button>
+        <button id="cropClear">No crop</button>
+      </div>
+    </div>
+
+    <div class="sec" id="sampleSec">
+      <h3>Match a colour sample</h3>
+      <div class="muted" style="margin-bottom:8px">Upload one page whose colours you
+        like. It learns the paper &amp; pen colours and repaints every other page
+        to match.</div>
+      <button id="sampleBtn" style="width:100%">🎨 Upload / drop sample page…</button>
+      <div id="paletteBox" style="display:none;margin-top:10px">
+        <div class="muted" style="margin-bottom:6px">Detected palette:</div>
+        <div id="swatches" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+        <div class="btnrow" style="margin-top:10px">
+          <button id="applySample" class="primary" style="flex:1">Apply to all pages</button>
+          <button id="reSample">Change</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h3>Scan / Color</h3>
+      <div class="btnrow" style="margin-bottom:12px">
+        <button id="scanAuto" class="primary" style="flex:1">✨ Auto scan</button>
+        <button id="scanOff">Off</button>
+      </div>
+      <div class="row" style="margin-bottom:12px"><label>Mode</label>
+        <select id="cMode">
+          <option value="none">Colour</option>
+          <option value="grayscale">Grayscale</option>
+          <option value="bw">Black &amp; white</option>
+        </select></div>
+      <div class="crow"><span>Whiten paper</span><span id="vWhiten" class="unit">0%</span>
+        <input type="range" id="cWhiten" min="0" max="100" step="1" value="0"/></div>
+      <div class="crow"><span>Brightness</span><span id="vBright" class="unit">1.00</span>
+        <input type="range" id="cBright" min="0.5" max="1.6" step="0.01" value="1"/></div>
+      <div class="crow"><span>Contrast</span><span id="vContrast" class="unit">1.00</span>
+        <input type="range" id="cContrast" min="0.5" max="2.5" step="0.01" value="1"/></div>
+      <div class="crow"><span>Saturation</span><span id="vSat" class="unit">1.00</span>
+        <input type="range" id="cSat" min="0" max="2" step="0.01" value="1"/></div>
+    </div>
+
+    <div class="sec">
+      <h3>Watermark</h3>
+      <div class="btnrow" style="margin-bottom:12px">
+        <button id="wmToggle" class="toggle" style="flex:1">🏷 Watermark: Off</button>
+      </div>
+      <div class="crow"><span>Opacity</span><span id="vWmOp" class="unit">150%</span>
+        <input type="range" id="wmOpacity" min="20" max="300" step="5" value="150"/></div>
+      <div class="muted">Overlays the Arivihan watermark on every page (preview &amp; export).</div>
+    </div>
+
+    <div class="sec">
+      <h3>Apply to batch</h3>
+      <div class="btnrow">
+        <button id="applyAngleAll">Angle → all pages</button>
+        <button id="applyCropAll">Margins → all pages</button>
+        <button id="applyColorAll">Color → all pages</button>
+      </div>
+      <div class="muted" style="margin-top:8px">Copies this page's settings to every
+        page in every loaded PDF. Handy when all scans share the same margins.</div>
+    </div>
+  </aside>
+</div>
+
+<input type="file" id="fileInput" accept="application/pdf" multiple hidden/>
+<input type="file" id="sampleInput" accept="image/*,application/pdf" hidden/>
+<div id="toastHost"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const DEF_COLOR = {mode:'none', brightness:1, contrast:1, saturation:1, whiten:0};
+const AUTO_SCAN = {mode:'none', brightness:1.02, contrast:1.12, saturation:1.55, whiten:0.8};
+const state = {
+  job:null, files:[], fi:0, pi:0,   // current file/page index
+  before:false,                     // global before/after view toggle
+  palette:null,                     // learned colour palette (global to job)
+  paletteVersion:0,                 // bumps on each new sample (cache-bust)
+  watermark:{on:false, opacity:1.5},// global branding overlay (all pages)
+  loading:false,
+};
+
+// ---- helpers ------------------------------------------------------------
+function toast(msg, ms=2600){
+  const t=document.createElement('div');t.className='toast';t.innerHTML=msg;
+  $('#toastHost').appendChild(t);
+  if(ms) setTimeout(()=>t.remove(), ms);
+  return t;
+}
+function curFile(){ return state.files[state.fi]; }
+function curPage(){ const f=curFile(); return f? f.pages[state.pi]:null; }
+function pageEdited(f,i){
+  const p=f.pages[i], a=f.auto[i];
+  if(Math.abs(p.angle-a.angle)>0.001) return true;
+  for(const k of ['left','top','right','bottom'])
+    if(Math.abs(p.crop[k]-a.crop[k])>0.0005) return true;
+  if(colorEdited(p)) return true;
+  return false;
+}
+function colorEdited(p){
+  const c=p.color;
+  return c.mode!=='none' || Math.abs(c.brightness-1)>1e-3
+    || Math.abs(c.contrast-1)>1e-3 || Math.abs(c.saturation-1)>1e-3
+    || c.whiten>1e-3;
+}
+
+// ---- upload -------------------------------------------------------------
+async function uploadFiles(fileList){
+  const pdfs=[...fileList].filter(f=>f.name.toLowerCase().endsWith('.pdf'));
+  if(!pdfs.length){ toast('No PDF files selected'); return; }
+  const fd=new FormData();
+  pdfs.forEach(f=>fd.append('files', f));
+  const t=toast(`<span class="spinner"></span> Analysing ${pdfs.length} PDF(s)…`,0);
+  try{
+    const r=await fetch('/api/upload',{method:'POST',body:fd});
+    const data=await r.json();
+    if(!r.ok){ throw new Error(data.error||'upload failed'); }
+    ingest(data);
+  }catch(e){ toast('Error: '+e.message); }
+  finally{ t.remove(); }
+}
+function ingest(data){
+  if(!state.job){ state.job=data.job; }
+  // If a job already exists we start a fresh one to keep things simple.
+  if(state.files.length && data.job!==state.job){ /* new job replaces */ }
+  state.job=data.job;
+  // store auto (original) settings separately so "Auto" can reset
+  data.files.forEach(f=>{
+    f.auto=f.pages.map(p=>({angle:p.angle, crop:{...p.crop}}));
+    f.pages=f.pages.map(p=>({angle:p.angle, crop:{...p.crop},
+      color:{...DEF_COLOR}, w:p.w, h:p.h}));
+  });
+  state.files=data.files;
+  state.fi=0; state.pi=0;
+  $('#drop').classList.add('hidden');
+  $('#frame').style.display='';
+  $('#exportBtn').disabled=false;
+  const np=state.files.reduce((s,f)=>s+f.npages,0);
+  $('#jobinfo').textContent=`${state.files.length} PDF(s) · ${np} pages`;
+  renderRail(); loadPage();
+}
+
+// ---- left rail (live thumbnails) ----------------------------------------
+const cards = {};                          // "fi:pi" -> {card, img}
+function thumbDim(){                        // render size (sharper than display)
+  return Math.min(420, Math.round(parseInt($('#zoom').value) * 1.7));
+}
+function thumbUrl(fi,pi){
+  const f=state.files[fi], p=f.pages[pi], c=p.crop;
+  return `/api/preview?job=${state.job}&fid=${f.fid}&page=${pi}&angle=${p.angle}`
+    +colorQuery(p.color)+wmQuery()
+    +`&crl=${c.left}&crt=${c.top}&crr=${c.right}&crb=${c.bottom}`
+    +`&maxdim=${thumbDim()}&pv=${state.paletteVersion}`;
+}
+function renderRail(){
+  const body=$('#railBody'); body.innerHTML='';
+  for(const k in cards) delete cards[k];
+  state.files.forEach((f,fi)=>{
+    const g=document.createElement('div');g.className='filegrp';
+    const nm=document.createElement('div');nm.className='filename';nm.textContent=f.name;
+    g.appendChild(nm);
+    const grid=document.createElement('div');grid.className='cards';
+    f.pages.forEach((p,pi)=>{
+      const card=document.createElement('div');
+      card.className='pcard'+((fi===state.fi&&pi===state.pi)?' active':'')
+        +(pageEdited(f,pi)?' edited':'');
+      const img=document.createElement('img');
+      img.loading='lazy'; img.alt=`Page ${pi+1}`; img.src=thumbUrl(fi,pi);
+      const box=document.createElement('div');box.className='pthumb';box.appendChild(img);
+      const cap=document.createElement('div');cap.className='pcap';
+      cap.innerHTML=`<span class="dot"></span><span>Page ${pi+1}</span>`;
+      card.appendChild(box);card.appendChild(cap);
+      card.onclick=()=>{ state.fi=fi; state.pi=pi; setActiveCard(); loadPage(); };
+      grid.appendChild(card);
+      cards[`${fi}:${pi}`]={card,img};
+    });
+    g.appendChild(grid);body.appendChild(g);
+  });
+}
+function setActiveCard(){
+  document.querySelectorAll('.pcard.active').forEach(c=>c.classList.remove('active'));
+  const e=cards[`${state.fi}:${state.pi}`];
+  if(e){ e.card.classList.add('active');
+    e.card.scrollIntoView({block:'nearest'}); }
+}
+function markEdited(fi,pi){
+  const e=cards[`${fi}:${pi}`]; if(!e) return;
+  e.card.classList.toggle('edited', pageEdited(state.files[fi],pi));
+}
+function refreshThumb(fi,pi){
+  const e=cards[`${fi}:${pi}`]; if(!e) return;
+  markEdited(fi,pi); e.img.src=thumbUrl(fi,pi);
+}
+let thumbTimer=null;
+function refreshThumbSoon(fi,pi){
+  markEdited(fi,pi);
+  clearTimeout(thumbTimer);
+  thumbTimer=setTimeout(()=>refreshThumb(fi,pi),220);
+}
+function refreshAllThumbs(){
+  state.files.forEach((f,fi)=>f.pages.forEach((p,pi)=>refreshThumb(fi,pi)));
+}
+
+// ---- preview ------------------------------------------------------------
+let previewTimer=null;
+function loadPage(){
+  const f=curFile(), p=curPage(); if(!p) return;
+  $('#pageLabel').textContent=`${f.name} — page ${state.pi+1} / ${f.npages}`;
+  syncControls();
+  refreshPreview();
+}
+function colorQuery(c){
+  return `&cmode=${c.mode}&cbright=${c.brightness}&ccontrast=${c.contrast}`
+    +`&csat=${c.saturation}&cwhiten=${c.whiten}`;
+}
+function wmQuery(){
+  return state.watermark.on ? `&wm=1&wmop=${state.watermark.opacity}` : '';
+}
+function refreshPreview(){
+  const f=curFile(), p=curPage(); if(!p) return;
+  const base=`/api/preview?job=${state.job}&fid=${f.fid}&page=${state.pi}`;
+  const url = state.before
+    ? `${base}&angle=0`                          // raw original, no colour
+    : `${base}&angle=${p.angle}${colorQuery(p.color)}${wmQuery()}&pv=${state.paletteVersion}`;
+  const img=$('#pageImg');
+  img.onload=()=>drawCrop();
+  img.src=url;
+}
+function refreshPreviewDebounced(){
+  clearTimeout(previewTimer);
+  previewTimer=setTimeout(refreshPreview,140);
+}
+
+// ---- crop overlay -------------------------------------------------------
+function drawCrop(){
+  const p=curPage(); if(!p) return;
+  if(state.before){ $('#editState').textContent='showing original'; return; }
+  const img=$('#pageImg');
+  const W=img.clientWidth, H=img.clientHeight;
+  const c=p.crop;
+  const L=c.left*100, T=c.top*100, R=c.right*100, B=c.bottom*100;
+  // guides
+  $('#gTop').style.top=`${T}%`;
+  $('#gBot').style.top=`${100-B}%`;
+  $('#gLeft').style.left=`${L}%`;
+  $('#gRight').style.left=`${100-R}%`;
+  // shades (kept region = inside)
+  const st=$('#shTop'),sb=$('#shBot'),sl=$('#shLeft'),sr=$('#shRight');
+  st.style.cssText=`top:0;left:0;right:0;height:${T}%`;
+  sb.style.cssText=`bottom:0;left:0;right:0;height:${B}%`;
+  sl.style.cssText=`top:${T}%;bottom:${B}%;left:0;width:${L}%`;
+  sr.style.cssText=`top:${T}%;bottom:${B}%;right:0;width:${R}%`;
+  $('#editState').textContent = pageEdited(curFile(),state.pi) ? 'edited' : 'auto';
+}
+
+function startDrag(which){
+  return ev=>{
+    ev.preventDefault();
+    const frame=$('#frame').getBoundingClientRect();
+    const move=e=>{
+      const c=curPage().crop;
+      if(which==='top'){
+        let v=(e.clientY-frame.top)/frame.height;
+        c.top=Math.min(Math.max(v,0), 1-c.bottom-0.02);
+      }else if(which==='bottom'){
+        let v=(frame.bottom-e.clientY)/frame.height;
+        c.bottom=Math.min(Math.max(v,0), 1-c.top-0.02);
+      }else if(which==='left'){
+        let v=(e.clientX-frame.left)/frame.width;
+        c.left=Math.min(Math.max(v,0), 1-c.right-0.02);
+      }else if(which==='right'){
+        let v=(frame.right-e.clientX)/frame.width;
+        c.right=Math.min(Math.max(v,0), 1-c.left-0.02);
+      }
+      drawCrop(); syncCropInputs();
+    };
+    const up=()=>{ document.removeEventListener('pointermove',move);
+      document.removeEventListener('pointerup',up); refreshThumb(state.fi,state.pi); };
+    document.addEventListener('pointermove',move);
+    document.addEventListener('pointerup',up);
+  };
+}
+$('#gTop').addEventListener('pointerdown',startDrag('top'));
+$('#gBot').addEventListener('pointerdown',startDrag('bottom'));
+$('#gLeft').addEventListener('pointerdown',startDrag('left'));
+$('#gRight').addEventListener('pointerdown',startDrag('right'));
+
+// ---- controls sync ------------------------------------------------------
+function syncControls(){ syncAngle(); syncCropInputs(); syncColor(); }
+function syncColor(){
+  const c=curPage().color;
+  if(['none','grayscale','bw'].includes(c.mode)) $('#cMode').value=c.mode;
+  $('#cWhiten').value=Math.round(c.whiten*100);
+  $('#vWhiten').textContent=Math.round(c.whiten*100)+'%';
+  $('#cBright').value=c.brightness;   $('#vBright').textContent=c.brightness.toFixed(2);
+  $('#cContrast').value=c.contrast;   $('#vContrast').textContent=c.contrast.toFixed(2);
+  $('#cSat').value=c.saturation;      $('#vSat').textContent=c.saturation.toFixed(2);
+}
+function syncAngle(){
+  const p=curPage();
+  $('#angleVal').textContent=p.angle.toFixed(1);
+  $('#angleSlider').value=p.angle;
+}
+function syncCropInputs(){
+  const c=curPage().crop;
+  $('#mTop').value=(c.top*100).toFixed(1);
+  $('#mBot').value=(c.bottom*100).toFixed(1);
+  $('#mLeft').value=(c.left*100).toFixed(1);
+  $('#mRight').value=(c.right*100).toFixed(1);
+}
+function setAngle(v){
+  const p=curPage(); p.angle=Math.round(Math.max(-12,Math.min(12,v))*10)/10;
+  syncAngle(); refreshPreviewDebounced(); refreshThumbSoon(state.fi,state.pi);
+  $('#editState').textContent = pageEdited(curFile(),state.pi)?'edited':'auto';
+}
+
+$('#angleSlider').addEventListener('input',e=>setAngle(parseFloat(e.target.value)));
+document.querySelectorAll('[data-da]').forEach(b=>
+  b.onclick=()=>setAngle(curPage().angle+parseFloat(b.dataset.da)));
+$('#angleReset').onclick=()=>setAngle(curFile().auto[state.pi].angle);
+
+function cropInput(id,key){
+  $(id).addEventListener('input',e=>{
+    let v=parseFloat(e.target.value)/100; if(isNaN(v))v=0;
+    curPage().crop[key]=Math.max(0,Math.min(0.49,v));
+    drawCrop(); refreshThumbSoon(state.fi,state.pi);
+  });
+}
+cropInput('#mTop','top'); cropInput('#mBot','bottom');
+cropInput('#mLeft','left'); cropInput('#mRight','right');
+
+$('#cropAuto').onclick=()=>{ curPage().crop={...curFile().auto[state.pi].crop};
+  syncCropInputs(); drawCrop(); refreshThumb(state.fi,state.pi); };
+$('#cropClear').onclick=()=>{ curPage().crop={left:0,top:0,right:0,bottom:0};
+  syncCropInputs(); drawCrop(); refreshThumb(state.fi,state.pi); };
+
+// ---- scan / colour ------------------------------------------------------
+function applyColor(c){
+  curPage().color={...c};
+  if(state.before) setBefore(false);   // jump back so the change is visible
+  syncColor(); refreshThumb(state.fi,state.pi); refreshPreviewDebounced();
+}
+$('#scanAuto').onclick=()=>applyColor(AUTO_SCAN);
+$('#scanOff').onclick=()=>applyColor(DEF_COLOR);
+$('#cMode').addEventListener('change',e=>{
+  curPage().color.mode=e.target.value;
+  refreshThumbSoon(state.fi,state.pi); refreshPreviewDebounced(); });
+function colorSlider(id,valId,key,scale=1,fmt){
+  $(id).addEventListener('input',e=>{
+    const raw=parseFloat(e.target.value);
+    if(curPage().color.mode==='sample') curPage().color.mode='none'; // manual takes over
+    curPage().color[key]=raw/scale;
+    $(valId).textContent=fmt(raw);
+    syncColor(); refreshThumbSoon(state.fi,state.pi); refreshPreviewDebounced();
+  });
+}
+colorSlider('#cWhiten','#vWhiten','whiten',100,v=>Math.round(v)+'%');
+colorSlider('#cBright','#vBright','brightness',1,v=>v.toFixed(2));
+colorSlider('#cContrast','#vContrast','contrast',1,v=>v.toFixed(2));
+colorSlider('#cSat','#vSat','saturation',1,v=>v.toFixed(2));
+
+// ---- before / after view toggle -----------------------------------------
+function setBefore(on){
+  state.before=on;
+  const b=$('#beforeBtn');
+  b.classList.toggle('active',on);
+  b.textContent = on ? '👁 Showing original' : '👁 Show original';
+  $('#frame').classList.toggle('before',on);
+  refreshPreview();
+}
+$('#beforeBtn').onclick=()=>setBefore(!state.before);
+
+// ---- watermark (global overlay on every page) ---------------------------
+function syncWatermarkBtn(){
+  const b=$('#wmToggle');
+  b.classList.toggle('active',state.watermark.on);
+  b.textContent = state.watermark.on ? '🏷 Watermark: On' : '🏷 Watermark: Off';
+}
+$('#wmToggle').onclick=()=>{
+  state.watermark.on=!state.watermark.on;
+  syncWatermarkBtn();
+  if(state.before) setBefore(false);   // watermark isn't shown on the original
+  refreshAllThumbs(); refreshPreview();
+};
+let wmTimer=null;
+$('#wmOpacity').addEventListener('input',e=>{
+  state.watermark.opacity=parseInt(e.target.value)/100;
+  $('#vWmOp').textContent=e.target.value+'%';
+  if(!state.watermark.on) return;
+  if(state.before) setBefore(false);
+  refreshPreviewDebounced();
+  clearTimeout(wmTimer);
+  wmTimer=setTimeout(refreshAllThumbs,260);
+});
+
+// ---- colour sample (palette learning + transfer) ------------------------
+$('#sampleBtn').onclick=()=>{
+  if(!state.job){ toast('Load your note PDFs first, then a colour sample'); return; }
+  $('#sampleInput').click();
+};
+$('#reSample').onclick=()=>$('#sampleInput').click();
+async function uploadSample(file){
+  if(!file) return;
+  if(!state.job){ toast('Load your note PDFs first, then a colour sample'); return; }
+  if(!/\.(pdf|png|jpe?g|webp|bmp|gif|tiff?)$/i.test(file.name) && !file.type.startsWith('image/')){
+    toast('Sample must be an image or PDF'); return; }
+  const fd=new FormData(); fd.append('job',state.job); fd.append('file',file);
+  const t=toast('<span class="spinner"></span> Learning colours from sample…',0);
+  try{
+    const r=await fetch('/api/sample',{method:'POST',body:fd});
+    const pal=await r.json();
+    if(!r.ok) throw new Error(pal.error||'failed');
+    state.palette=pal; state.paletteVersion++; showPalette(pal);
+    curPage().color={...curPage().color,mode:'sample'};   // preview immediately
+    if(state.before) setBefore(false);
+    syncColor(); refreshThumb(state.fi,state.pi); refreshPreview();
+    toast('Palette learned — click “Apply to all pages”');
+  }catch(err){ toast('Error: '+err.message); }
+  finally{ t.remove(); }
+}
+$('#sampleInput').addEventListener('change',e=>{ uploadSample(e.target.files[0]); e.target.value=''; });
+
+// drag-and-drop onto the sample panel
+const sec=$('#sampleSec');
+;['dragenter','dragover'].forEach(ev=>sec.addEventListener(ev,e=>{
+  e.preventDefault(); e.stopPropagation(); sec.classList.add('hot'); }));
+;['dragleave','drop'].forEach(ev=>sec.addEventListener(ev,e=>{
+  e.preventDefault(); e.stopPropagation();
+  if(ev==='dragleave' && sec.contains(e.relatedTarget)) return;
+  sec.classList.remove('hot'); }));
+sec.addEventListener('drop',e=>{ if(e.dataTransfer?.files?.length) uploadSample(e.dataTransfer.files[0]); });
+function rgb(a){ return `rgb(${a[0]},${a[1]},${a[2]})`; }
+function showPalette(pal){
+  const box=$('#swatches'); box.innerHTML='';
+  const chip=(c,label)=>{
+    const d=document.createElement('div');
+    d.title=label+' '+rgb(c);
+    d.style.cssText=`width:34px;height:34px;border-radius:6px;border:1px solid #0006;`
+      +`background:${rgb(c)};position:relative`;
+    box.appendChild(d);
+  };
+  chip(pal.background,'paper');
+  pal.inks.forEach(c=>chip(c,'pen'));
+  $('#paletteBox').style.display='';
+  $('#sampleBtn').textContent='🎨 Sample loaded — change';
+}
+$('#applySample').onclick=()=>{
+  if(!state.palette){ toast('Upload a sample first'); return; }
+  let n=0;
+  state.files.forEach(f=>f.pages.forEach(p=>{p.color={...p.color,mode:'sample'};n++;}));
+  toast(`Sample palette applied to ${n} pages`);
+  if(state.before) setBefore(false);
+  syncColor(); refreshAllThumbs(); refreshPreview();
+};
+
+// ---- batch apply --------------------------------------------------------
+$('#applyAngleAll').onclick=()=>{
+  const a=curPage().angle; let n=0;
+  state.files.forEach(f=>f.pages.forEach(p=>{p.angle=a;n++;}));
+  toast(`Angle ${a.toFixed(1)}° applied to ${n} pages`);
+  refreshAllThumbs(); refreshPreview();
+};
+$('#applyCropAll').onclick=()=>{
+  const c={...curPage().crop}; let n=0;
+  state.files.forEach(f=>f.pages.forEach(p=>{p.crop={...c};n++;}));
+  toast(`Margins applied to ${n} pages`); refreshAllThumbs(); drawCrop();
+};
+$('#applyColorAll').onclick=()=>{
+  const c={...curPage().color}; let n=0;
+  state.files.forEach(f=>f.pages.forEach(p=>{p.color={...c};n++;}));
+  toast(`Colour applied to ${n} pages`);
+  if(state.before) setBefore(false);
+  refreshAllThumbs(); refreshPreview();
+};
+
+// ---- nav ----------------------------------------------------------------
+function step(d){
+  let fi=state.fi, pi=state.pi+d;
+  while(pi>=state.files[fi].npages){ pi-=state.files[fi].npages; fi++;
+    if(fi>=state.files.length){ fi=state.files.length-1; pi=state.files[fi].npages-1; break; } }
+  while(pi<0){ fi--; if(fi<0){ fi=0; pi=0; break; } pi+=state.files[fi].npages; }
+  state.fi=fi; state.pi=pi; loadPage(); setActiveCard();
+}
+$('#prevBtn').onclick=()=>step(-1);
+$('#nextBtn').onclick=()=>step(1);
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
+  if(e.key==='ArrowLeft')step(-1);
+  if(e.key==='ArrowRight')step(1);
+});
+
+// ---- export -------------------------------------------------------------
+$('#exportBtn').onclick=async()=>{
+  const settings={};
+  state.files.forEach(f=>{
+    settings[f.fid]={pages:f.pages.map(p=>({angle:p.angle,crop:p.crop,color:p.color}))};
+  });
+  const body={job:state.job,dpi:parseInt($('#dpi').value),settings,
+    watermark:state.watermark.on, wmOpacity:state.watermark.opacity};
+  const t=toast('<span class="spinner"></span> Rendering PDF(s) at full resolution…',0);
+  try{
+    const r=await fetch('/api/export',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!r.ok){ throw new Error('export failed'); }
+    const blob=await r.blob();
+    const cd=r.headers.get('Content-Disposition')||'';
+    const m=cd.match(/filename="?([^"]+)"?/);
+    const name=m?m[1]:'notes_fixed.pdf';
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download=name;a.click();
+    URL.revokeObjectURL(url);
+    toast('✅ Exported '+name);
+  }catch(e){ toast('Error: '+e.message); }
+  finally{ t.remove(); }
+};
+
+// ---- file pickers / dnd -------------------------------------------------
+$('#pickBtn').onclick=()=>$('#fileInput').click();
+$('#addBtn').onclick=()=>$('#fileInput').click();
+$('#fileInput').addEventListener('change',e=>{ uploadFiles(e.target.files); e.target.value=''; });
+
+const drop=$('#canvasArea');
+;['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{
+  e.preventDefault(); $('#drop').classList.add('hot'); }));
+;['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{
+  e.preventDefault(); if(ev==='dragleave'&&e.target!==drop) return;
+  $('#drop').classList.remove('hot'); }));
+drop.addEventListener('drop',e=>{ if(e.dataTransfer?.files?.length) uploadFiles(e.dataTransfer.files); });
+
+window.addEventListener('resize',()=>{ if(curPage()) drawCrop(); });
+
+// ---- thumbnail zoom -----------------------------------------------------
+let zoomTimer=null;
+function applyZoom(){ $('#rail').style.setProperty('--thumbw',$('#zoom').value+'px'); }
+$('#zoom').addEventListener('input',()=>{
+  applyZoom();
+  clearTimeout(zoomTimer);
+  zoomTimer=setTimeout(()=>{ if(state.files.length) refreshAllThumbs(); },260);
+});
+applyZoom();
+</script>
+</body>
+</html>
