@@ -148,6 +148,10 @@ def preview():
     crop = _crop_from_args(request.args)
     watermark = request.args.get("wm", "0") == "1"
     wm_opacity = float(request.args.get("wmop", "1") or 1)
+    wm_scale = float(request.args.get("wmscale", "1") or 1)
+    wm_rotate = float(request.args.get("wmrot", "0") or 0)
+    wm_dx = float(request.args.get("wmdx", "0") or 0)
+    wm_dy = float(request.args.get("wmdy", "0") or 0)
 
     _job(job_id)
     base = BASE_CACHE.get((job_id, fid, page))
@@ -167,7 +171,8 @@ def preview():
         out = imaging.apply_crop(out, crop)
     out = imaging.finish_color(out, color, palette)
     if watermark:
-        out = imaging.apply_watermark(out, wm_opacity)
+        out = imaging.apply_watermark(out, wm_opacity, wm_scale, wm_rotate,
+                                      wm_dx, wm_dy)
     return Response(imaging.to_png_bytes(out), mimetype="image/png")
 
 
@@ -208,6 +213,10 @@ def export():
     settings = data.get("settings", {})
     watermark = bool(data.get("watermark", False))
     wm_opacity = float(data.get("wmOpacity", 1) or 1)
+    wm_scale = float(data.get("wmScale", 1) or 1)
+    wm_rotate = float(data.get("wmRotate", 0) or 0)
+    wm_dx = float(data.get("wmDx", 0) or 0)
+    wm_dy = float(data.get("wmDy", 0) or 0)
     job = _job(job_id)
     palette = job.get("palette")
 
@@ -226,7 +235,9 @@ def export():
             hi = imaging.render_page(doc, i, dpi)
             processed = imaging.process_page(hi, angle, crop, color, palette)
             if watermark:
-                processed = imaging.apply_watermark(processed, wm_opacity)
+                processed = imaging.apply_watermark(processed, wm_opacity,
+                                                    wm_scale, wm_rotate,
+                                                    wm_dx, wm_dy)
             images.append(processed.convert("RGB"))
         doc.close()
 

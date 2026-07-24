@@ -25,6 +25,12 @@
   button.primary{background:var(--acc2);border-color:var(--acc2);color:#fff;font-weight:600}
   button.primary:hover{background:var(--acc)}
   button:disabled{opacity:.45;cursor:not-allowed}
+  .histnav{display:flex;gap:2px;margin-right:4px}
+  .navbtn{display:flex;align-items:center;justify-content:center;
+    width:30px;height:30px;padding:0;font-size:18px;line-height:1;font-weight:600;
+    border-radius:8px;color:var(--txt)}
+  .navbtn:not(:disabled):hover{background:#232833;border-color:#3a4152}
+  .navbtn:disabled{opacity:.3}
   .wrap{display:flex;height:calc(100vh - 53px)}
   /* left rail */
   #rail{width:250px;flex:0 0 250px;border-right:1px solid var(--line);
@@ -72,9 +78,29 @@
   /* right controls */
   #panel{width:280px;flex:0 0 280px;border-left:1px solid var(--line);
     background:var(--panel);overflow-y:auto;padding:16px}
-  .sec{margin-bottom:20px}
-  .sec h3{margin:0 0 10px;font-size:12px;text-transform:uppercase;
-    letter-spacing:.7px;color:var(--mut);font-weight:600}
+  .sec{margin-bottom:12px;border:1px solid var(--line);border-radius:9px;
+    background:var(--panel2);overflow:hidden}
+  .sec h3{margin:0;font-size:12px;text-transform:uppercase;
+    letter-spacing:.7px;color:var(--mut);font-weight:600;
+    display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;
+    padding:11px 12px}
+  .sec h3:hover{color:var(--txt);background:#232833}
+  .sec h3::after{content:'▾';margin-left:auto;font-size:11px;color:var(--mut);
+    transition:transform .15s ease}
+  .sec.collapsed h3::after{transform:rotate(-90deg)}
+  .sec h3 .badge{font-size:10px;font-weight:600;letter-spacing:.3px;
+    padding:2px 6px;border-radius:20px;background:var(--acc2);color:#fff;
+    text-transform:none}
+  .secbody{padding:0 12px 14px}
+  .sec.collapsed .secbody{display:none}
+  /* filter preset chips */
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{padding:6px 11px;font-size:12px;border:1px solid var(--line);
+    border-radius:20px;background:var(--panel);color:var(--mut);cursor:pointer;
+    transition:border-color .12s,background .12s,color .12s}
+  .chip:hover{border-color:#3a4152;color:var(--txt)}
+  .chip.active{background:var(--acc2);border-color:var(--acc2);color:#fff;font-weight:600}
+  .chip.manual{border-style:dashed}
   .row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
   .row label{width:52px;color:var(--mut);font-size:12px}
   input[type=number]{width:70px;background:var(--panel2);border:1px solid var(--line);
@@ -118,9 +144,14 @@
 </head>
 <body>
 <header>
+  <div class="histnav">
+    <button id="undoBtn" class="navbtn" title="Undo (⌘Z)" disabled>↶</button>
+    <button id="redoBtn" class="navbtn" title="Redo (⌘⇧Z)" disabled>↷</button>
+  </div>
   <h1>Notes Deskewer</h1>
   <span class="sub" id="jobinfo">Straighten &amp; crop scanned notes — fully local</span>
   <div class="grow"></div>
+  <button id="discardBtn" disabled>↺ Discard &amp; open another</button>
   <button id="addBtn">+ Add PDFs</button>
   <label class="row" style="margin:0;gap:6px">
     <span class="unit">Export DPI</span>
@@ -175,92 +206,135 @@
   </section>
 
   <aside id="panel">
-    <div class="sec">
+    <div class="sec" data-sec="tilt">
       <h3>Tilt correction</h3>
-      <div class="anglebig"><span id="angleVal">0.0</span><span class="unit">°</span></div>
-      <input type="range" id="angleSlider" min="-12" max="12" step="0.1" value="0"/>
-      <div class="btnrow" style="margin-top:10px">
-        <button data-da="-1">−1°</button>
-        <button data-da="-0.1">−0.1</button>
-        <button data-da="0.1">+0.1</button>
-        <button data-da="1">+1°</button>
-        <button id="angleReset">Auto</button>
-      </div>
-    </div>
-
-    <div class="sec">
-      <h3>Crop margins <span class="unit">(% of page)</span></h3>
-      <div class="row"><label>Top</label>
-        <input type="number" id="mTop" step="0.5" min="0" max="49"/><span class="unit">%</span></div>
-      <div class="row"><label>Bottom</label>
-        <input type="number" id="mBot" step="0.5" min="0" max="49"/><span class="unit">%</span></div>
-      <div class="row"><label>Left</label>
-        <input type="number" id="mLeft" step="0.5" min="0" max="49"/><span class="unit">%</span></div>
-      <div class="row"><label>Right</label>
-        <input type="number" id="mRight" step="0.5" min="0" max="49"/><span class="unit">%</span></div>
-      <div class="btnrow" style="margin-top:6px">
-        <button id="cropAuto">Auto-detect</button>
-        <button id="cropClear">No crop</button>
-      </div>
-    </div>
-
-    <div class="sec" id="sampleSec">
-      <h3>Match a colour sample</h3>
-      <div class="muted" style="margin-bottom:8px">Upload one page whose colours you
-        like. It learns the paper &amp; pen colours and repaints every other page
-        to match.</div>
-      <button id="sampleBtn" style="width:100%">🎨 Upload / drop sample page…</button>
-      <div id="paletteBox" style="display:none;margin-top:10px">
-        <div class="muted" style="margin-bottom:6px">Detected palette:</div>
-        <div id="swatches" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+      <div class="secbody">
+        <div class="anglebig"><span id="angleVal">0.0</span><span class="unit">°</span></div>
+        <input type="range" id="angleSlider" min="-12" max="12" step="0.1" value="0"/>
         <div class="btnrow" style="margin-top:10px">
-          <button id="applySample" class="primary" style="flex:1">Apply to all pages</button>
-          <button id="reSample">Change</button>
+          <button data-da="-1">−1°</button>
+          <button data-da="-0.1">−0.1</button>
+          <button data-da="0.1">+0.1</button>
+          <button data-da="1">+1°</button>
+          <button id="angleReset">Auto</button>
         </div>
       </div>
     </div>
 
-    <div class="sec">
-      <h3>Scan / Color</h3>
-      <div class="btnrow" style="margin-bottom:12px">
-        <button id="scanAuto" class="primary" style="flex:1">✨ Auto scan</button>
-        <button id="scanOff">Off</button>
+    <div class="sec" data-sec="crop">
+      <h3>Crop margins <span class="unit">(% of page)</span></h3>
+      <div class="secbody">
+        <div class="row"><label>Top</label>
+          <input type="number" id="mTop" step="0.5" min="0" max="49"/><span class="unit">%</span></div>
+        <div class="row"><label>Bottom</label>
+          <input type="number" id="mBot" step="0.5" min="0" max="49"/><span class="unit">%</span></div>
+        <div class="row"><label>Left</label>
+          <input type="number" id="mLeft" step="0.5" min="0" max="49"/><span class="unit">%</span></div>
+        <div class="row"><label>Right</label>
+          <input type="number" id="mRight" step="0.5" min="0" max="49"/><span class="unit">%</span></div>
+        <div class="btnrow" style="margin-top:6px">
+          <button id="cropAuto">Auto-detect</button>
+          <button id="cropClear">No crop</button>
+        </div>
       </div>
-      <div class="row" style="margin-bottom:12px"><label>Mode</label>
-        <select id="cMode">
-          <option value="none">Colour</option>
-          <option value="grayscale">Grayscale</option>
-          <option value="bw">Black &amp; white</option>
-        </select></div>
-      <div class="crow"><span>Whiten paper</span><span id="vWhiten" class="unit">0%</span>
-        <input type="range" id="cWhiten" min="0" max="100" step="1" value="0"/></div>
-      <div class="crow"><span>Brightness</span><span id="vBright" class="unit">1.00</span>
-        <input type="range" id="cBright" min="0.5" max="1.6" step="0.01" value="1"/></div>
-      <div class="crow"><span>Contrast</span><span id="vContrast" class="unit">1.00</span>
-        <input type="range" id="cContrast" min="0.5" max="2.5" step="0.01" value="1"/></div>
-      <div class="crow"><span>Saturation</span><span id="vSat" class="unit">1.00</span>
-        <input type="range" id="cSat" min="0" max="2" step="0.01" value="1"/></div>
     </div>
 
-    <div class="sec">
-      <h3>Watermark</h3>
-      <div class="btnrow" style="margin-bottom:12px">
-        <button id="wmToggle" class="toggle" style="flex:1">🏷 Watermark: Off</button>
+    <div class="sec" id="sampleSec" data-sec="sample">
+      <h3>Match a colour sample</h3>
+      <div class="secbody">
+        <div class="muted" style="margin-bottom:8px">Upload one page whose colours you
+          like. It learns the paper &amp; pen colours and repaints every other page
+          to match.</div>
+        <button id="sampleBtn" style="width:100%">🎨 Upload / drop sample page…</button>
+        <div id="paletteBox" style="display:none;margin-top:10px">
+          <div class="muted" style="margin-bottom:6px">Detected palette:</div>
+          <div id="swatches" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+          <div id="hlNote" class="muted" style="display:none;margin-top:8px"></div>
+          <div class="btnrow" style="margin-top:10px">
+            <button id="applySample" class="primary" style="flex:1">Apply to all pages</button>
+            <button id="reSample">Change</button>
+          </div>
+        </div>
       </div>
-      <div class="crow"><span>Opacity</span><span id="vWmOp" class="unit">150%</span>
-        <input type="range" id="wmOpacity" min="20" max="300" step="5" value="150"/></div>
-      <div class="muted">Overlays the Arivihan watermark on every page (preview &amp; export).</div>
     </div>
 
-    <div class="sec">
+    <div class="sec" data-sec="filters">
+      <h3>Filters</h3>
+      <div class="secbody">
+        <div id="filterChips" class="chips">
+          <button class="chip" data-filter="none">Original</button>
+          <button class="chip" data-filter="soft">Soft White</button>
+          <button class="chip" data-filter="white">Clean White</button>
+          <button class="chip" data-filter="bright">Bright White</button>
+          <button class="chip" data-filter="vivid">Vivid Ink</button>
+          <button class="chip" data-filter="gray">Gray on White</button>
+          <button class="chip" data-filter="bw">B&amp;W Ink</button>
+          <button class="chip manual" data-filter="manual">Manual</button>
+        </div>
+        <div class="muted" style="margin-top:8px">One-tap white-paper looks. Adjusting
+          any slider below switches to <em>Manual</em>.</div>
+      </div>
+    </div>
+
+    <div class="sec" data-sec="scan">
+      <h3>Scan / Color <span class="unit">(manual)</span></h3>
+      <div class="secbody">
+        <div class="btnrow" style="margin-bottom:12px">
+          <button id="scanAuto" class="primary" style="flex:1">✨ Auto scan</button>
+          <button id="scanOff">Off</button>
+        </div>
+        <div class="row" style="margin-bottom:12px"><label>Mode</label>
+          <select id="cMode">
+            <option value="none">Colour</option>
+            <option value="grayscale">Grayscale</option>
+            <option value="bw">Black &amp; white</option>
+          </select></div>
+        <div class="crow"><span>Whiten paper</span><span id="vWhiten" class="unit">0%</span>
+          <input type="range" id="cWhiten" min="0" max="100" step="1" value="0"/></div>
+        <div class="crow"><span>Brightness</span><span id="vBright" class="unit">1.00</span>
+          <input type="range" id="cBright" min="0.5" max="1.6" step="0.01" value="1"/></div>
+        <div class="crow"><span>Contrast</span><span id="vContrast" class="unit">1.00</span>
+          <input type="range" id="cContrast" min="0.5" max="2.5" step="0.01" value="1"/></div>
+        <div class="crow"><span>Saturation</span><span id="vSat" class="unit">1.00</span>
+          <input type="range" id="cSat" min="0" max="2" step="0.01" value="1"/></div>
+      </div>
+    </div>
+
+    <div class="sec" data-sec="watermark">
+      <h3>Watermark <span id="wmBadge" class="badge" style="display:none">ON</span></h3>
+      <div class="secbody">
+        <div class="btnrow" style="margin-bottom:12px">
+          <button id="wmToggle" class="toggle" style="flex:1">🏷 Watermark: Off</button>
+        </div>
+        <div class="crow"><span>Opacity</span><span id="vWmOp" class="unit">150%</span>
+          <input type="range" id="wmOpacity" min="20" max="300" step="5" value="150"/></div>
+        <div class="crow"><span>Size / scale</span><span id="vWmScale" class="unit">100%</span>
+          <input type="range" id="wmScale" min="10" max="200" step="1" value="100"/></div>
+        <div class="crow"><span>Rotate</span><span id="vWmRot" class="unit">0°</span>
+          <input type="range" id="wmRotate" min="-180" max="180" step="1" value="0"/></div>
+        <div class="crow"><span>X position</span><span id="vWmDx" class="unit">0%</span>
+          <input type="range" id="wmDx" min="-50" max="50" step="1" value="0"/></div>
+        <div class="crow"><span>Y position</span><span id="vWmDy" class="unit">0%</span>
+          <input type="range" id="wmDy" min="-50" max="50" step="1" value="0"/></div>
+        <div class="btnrow" style="margin-bottom:8px">
+          <button id="wmReset">Reset position &amp; size</button>
+        </div>
+        <div class="muted">Overlays the Arivihan watermark on every page (preview &amp; export).
+          Size 100% covers the page; shrink it and drag X/Y to place a stamp.</div>
+      </div>
+    </div>
+
+    <div class="sec" data-sec="batch">
       <h3>Apply to batch</h3>
-      <div class="btnrow">
-        <button id="applyAngleAll">Angle → all pages</button>
-        <button id="applyCropAll">Margins → all pages</button>
-        <button id="applyColorAll">Color → all pages</button>
+      <div class="secbody">
+        <div class="btnrow">
+          <button id="applyAngleAll">Angle → all pages</button>
+          <button id="applyCropAll">Margins → all pages</button>
+          <button id="applyColorAll">Color → all pages</button>
+        </div>
+        <div class="muted" style="margin-top:8px">Copies this page's settings to every
+          page in every loaded PDF. Handy when all scans share the same margins.</div>
       </div>
-      <div class="muted" style="margin-top:8px">Copies this page's settings to every
-        page in every loaded PDF. Handy when all scans share the same margins.</div>
     </div>
   </aside>
 </div>
@@ -271,14 +345,28 @@
 
 <script>
 const $ = s => document.querySelector(s);
-const DEF_COLOR = {mode:'none', brightness:1, contrast:1, saturation:1, whiten:0};
-const AUTO_SCAN = {mode:'none', brightness:1.02, contrast:1.12, saturation:1.55, whiten:0.8};
+const DEF_COLOR = {mode:'none', brightness:1, contrast:1, saturation:1, whiten:0, filter:'none'};
+const AUTO_SCAN = {mode:'none', brightness:1.02, contrast:1.12, saturation:1.55, whiten:0.8, filter:'vivid'};
+// White-paper filter presets. Each sets the whole colour config; `id` is what
+// the Filters tile highlights. Values chosen so the paper cleans to white while
+// the ink stays crisp — from a gentle warm white up to a hard bright scan.
+const FILTERS = [
+  {id:'none',   c:{mode:'none',      whiten:0,    brightness:1,    contrast:1,    saturation:1}},
+  {id:'soft',   c:{mode:'none',      whiten:0.5,  brightness:1.03, contrast:1.06, saturation:1.08}},
+  {id:'white',  c:{mode:'none',      whiten:0.72, brightness:1.02, contrast:1.14, saturation:1.18}},
+  {id:'bright', c:{mode:'none',      whiten:1.0,  brightness:1.05, contrast:1.24, saturation:1.30}},
+  {id:'vivid',  c:{mode:'none',      whiten:0.8,  brightness:1.02, contrast:1.12, saturation:1.55}},
+  {id:'gray',   c:{mode:'grayscale', whiten:0.85, brightness:1.02, contrast:1.25, saturation:1}},
+  {id:'bw',     c:{mode:'bw',        whiten:0.9,  brightness:1.0,  contrast:1.4,  saturation:1}},
+];
 const state = {
   job:null, files:[], fi:0, pi:0,   // current file/page index
   before:false,                     // global before/after view toggle
   palette:null,                     // learned colour palette (global to job)
   paletteVersion:0,                 // bumps on each new sample (cache-bust)
-  watermark:{on:false, opacity:1.5},// global branding overlay (all pages)
+  // global branding overlay (all pages). scale: 1==covers page; dx/dy: centre
+  // offset as a fraction of page W/H; rotate in degrees.
+  watermark:{on:false, opacity:1.5, scale:1, rotate:0, dx:0, dy:0},
   loading:false,
 };
 
@@ -305,6 +393,82 @@ function colorEdited(p){
     || Math.abs(c.contrast-1)>1e-3 || Math.abs(c.saturation-1)>1e-3
     || c.whiten>1e-3;
 }
+
+// ---- undo / redo history ------------------------------------------------
+// One snapshot captures the entire editable state — every page's angle, crop
+// and colour across every file, plus the global watermark & palette. Because
+// all operations (single-page tweaks, guide drags, batch "→ all pages",
+// scan, watermark, sample) mutate that same state, a single stack undoes them
+// all uniformly, no matter how many pages an op touched.
+const history = { stack: [], idx: -1 };
+
+function snapshot(){
+  return JSON.stringify({
+    files: state.files.map(f=>({
+      pages: f.pages.map(p=>({angle:p.angle, crop:{...p.crop}, color:{...p.color}}))
+    })),
+    watermark: {...state.watermark},
+    palette: state.palette,
+    fi: state.fi, pi: state.pi,
+  });
+}
+function updateHistBtns(){
+  $('#undoBtn').disabled = history.idx <= 0;
+  $('#redoBtn').disabled = history.idx >= history.stack.length - 1;
+}
+// Record the current state as a new history entry (drops any redo tail).
+function pushHistory(){
+  const snap = snapshot();
+  if(history.idx >= 0 && history.stack[history.idx] === snap) return; // no-op
+  history.stack = history.stack.slice(0, history.idx + 1);
+  history.stack.push(snap);
+  history.idx = history.stack.length - 1;
+  updateHistBtns();
+}
+function resetHistory(){
+  history.stack = []; history.idx = -1;
+  pushHistory();                          // baseline (nothing to undo past this)
+}
+let commitTimer = null;
+function commit(){ clearTimeout(commitTimer); commitTimer=null; pushHistory(); }
+// Coalesce rapid continuous changes (sliders, drags, repeated ± clicks) into
+// a single undo step.
+function commitSoon(delay=450){
+  clearTimeout(commitTimer);
+  commitTimer = setTimeout(()=>{ commitTimer=null; pushHistory(); }, delay);
+}
+function flushCommit(){ if(commitTimer){ clearTimeout(commitTimer); commitTimer=null; pushHistory(); } }
+
+function applySnapshot(str){
+  const s = JSON.parse(str);
+  s.files.forEach((sf,fi)=>{
+    const f = state.files[fi]; if(!f) return;
+    sf.pages.forEach((sp,pi)=>{
+      const p = f.pages[pi]; if(!p) return;
+      p.angle = sp.angle; p.crop = {...sp.crop}; p.color = {...sp.color};
+    });
+  });
+  state.watermark = {...s.watermark};
+  state.palette = s.palette;
+  state.paletteVersion++;                 // bust thumbnail cache after restore
+  state.fi = Math.min(s.fi, state.files.length-1);
+  state.pi = Math.min(s.pi, state.files[state.fi].npages-1);
+  if(state.before) setBefore(false);
+  syncWatermarkBtn();
+  loadPage(); setActiveCard(); refreshAllThumbs();
+}
+function undo(){
+  flushCommit();
+  if(history.idx <= 0) return;
+  history.idx--; applySnapshot(history.stack[history.idx]); updateHistBtns();
+}
+function redo(){
+  flushCommit();
+  if(history.idx >= history.stack.length-1) return;
+  history.idx++; applySnapshot(history.stack[history.idx]); updateHistBtns();
+}
+$('#undoBtn').onclick = undo;
+$('#redoBtn').onclick = redo;
 
 // ---- upload -------------------------------------------------------------
 async function uploadFiles(fileList){
@@ -337,10 +501,41 @@ function ingest(data){
   $('#drop').classList.add('hidden');
   $('#frame').style.display='';
   $('#exportBtn').disabled=false;
+  $('#discardBtn').disabled=false;
   const np=state.files.reduce((s,f)=>s+f.npages,0);
   $('#jobinfo').textContent=`${state.files.length} PDF(s) · ${np} pages`;
+  resetHistory();
   renderRail(); loadPage();
 }
+
+// ---- discard current job & start over -----------------------------------
+// Wipes all loaded files and edits back to the empty drop screen. The palette,
+// watermark and colour sample all reset too, so the next PDF opens clean.
+function discardJob(){
+  state.job=null; state.files=[]; state.fi=0; state.pi=0;
+  state.before=false; state.palette=null; state.paletteVersion++;
+  state.watermark={on:false, opacity:1.5, scale:1, rotate:0, dx:0, dy:0};
+  for(const k in cards) delete cards[k];
+  $('#railBody').innerHTML='<div class="muted" style="padding:8px">No files yet.</div>';
+  $('#frame').style.display='none';
+  $('#drop').classList.remove('hidden');
+  $('#exportBtn').disabled=true;
+  $('#discardBtn').disabled=true;
+  $('#jobinfo').textContent='Straighten & crop scanned notes — fully local';
+  $('#pageLabel').textContent='—';
+  $('#editState').textContent='';
+  $('#paletteBox').style.display='none';
+  $('#sampleBtn').textContent='🎨 Upload / drop sample page…';
+  setBefore(false);
+  syncWatermarkBtn();
+  history.stack=[]; history.idx=-1; updateHistBtns();
+}
+$('#discardBtn').onclick=()=>{
+  if(state.files.length &&
+     !confirm('Discard the current PDFs and all edits, then open another?')) return;
+  discardJob();
+  $('#fileInput').click();
+};
 
 // ---- left rail (live thumbnails) ----------------------------------------
 const cards = {};                          // "fi:pi" -> {card, img}
@@ -416,7 +611,9 @@ function colorQuery(c){
     +`&csat=${c.saturation}&cwhiten=${c.whiten}`;
 }
 function wmQuery(){
-  return state.watermark.on ? `&wm=1&wmop=${state.watermark.opacity}` : '';
+  const w=state.watermark;
+  return w.on ? `&wm=1&wmop=${w.opacity}&wmscale=${w.scale}&wmrot=${w.rotate}`
+    +`&wmdx=${w.dx}&wmdy=${w.dy}` : '';
 }
 function refreshPreview(){
   const f=curFile(), p=curPage(); if(!p) return;
@@ -477,7 +674,8 @@ function startDrag(which){
       drawCrop(); syncCropInputs();
     };
     const up=()=>{ document.removeEventListener('pointermove',move);
-      document.removeEventListener('pointerup',up); refreshThumb(state.fi,state.pi); };
+      document.removeEventListener('pointerup',up); refreshThumb(state.fi,state.pi);
+      commit(); };
     document.addEventListener('pointermove',move);
     document.addEventListener('pointerup',up);
   };
@@ -497,7 +695,31 @@ function syncColor(){
   $('#cBright').value=c.brightness;   $('#vBright').textContent=c.brightness.toFixed(2);
   $('#cContrast').value=c.contrast;   $('#vContrast').textContent=c.contrast.toFixed(2);
   $('#cSat').value=c.saturation;      $('#vSat').textContent=c.saturation.toFixed(2);
+  syncFilterChips();
 }
+// ---- filters (white-paper presets) --------------------------------------
+function syncFilterChips(){
+  const p=curPage();
+  const cur = p ? (p.color.mode==='sample' ? null : p.color.filter) : null;
+  document.querySelectorAll('#filterChips .chip').forEach(ch=>
+    ch.classList.toggle('active', ch.dataset.filter===cur));
+}
+function applyFilter(id){
+  const f=FILTERS.find(x=>x.id===id); if(!f) return;
+  curPage().color={...f.c, filter:id};
+  if(state.before) setBefore(false);
+  syncColor(); refreshThumb(state.fi,state.pi); refreshPreviewDebounced(); commit();
+}
+// Called whenever a manual control (slider / mode) is touched: drop out of any
+// preset into "Manual" so the chips reflect that the look is now hand-tuned.
+function markManual(){
+  if(curPage()) curPage().color.filter='manual';
+}
+$('#filterChips').addEventListener('click',e=>{
+  const ch=e.target.closest('.chip'); if(!ch||!curPage()) return;
+  if(ch.dataset.filter==='manual'){ markManual(); syncFilterChips(); return; }
+  applyFilter(ch.dataset.filter);
+});
 function syncAngle(){
   const p=curPage();
   $('#angleVal').textContent=p.angle.toFixed(1);
@@ -514,6 +736,7 @@ function setAngle(v){
   const p=curPage(); p.angle=Math.round(Math.max(-12,Math.min(12,v))*10)/10;
   syncAngle(); refreshPreviewDebounced(); refreshThumbSoon(state.fi,state.pi);
   $('#editState').textContent = pageEdited(curFile(),state.pi)?'edited':'auto';
+  commitSoon();
 }
 
 $('#angleSlider').addEventListener('input',e=>setAngle(parseFloat(e.target.value)));
@@ -525,35 +748,36 @@ function cropInput(id,key){
   $(id).addEventListener('input',e=>{
     let v=parseFloat(e.target.value)/100; if(isNaN(v))v=0;
     curPage().crop[key]=Math.max(0,Math.min(0.49,v));
-    drawCrop(); refreshThumbSoon(state.fi,state.pi);
+    drawCrop(); refreshThumbSoon(state.fi,state.pi); commitSoon();
   });
 }
 cropInput('#mTop','top'); cropInput('#mBot','bottom');
 cropInput('#mLeft','left'); cropInput('#mRight','right');
 
 $('#cropAuto').onclick=()=>{ curPage().crop={...curFile().auto[state.pi].crop};
-  syncCropInputs(); drawCrop(); refreshThumb(state.fi,state.pi); };
+  syncCropInputs(); drawCrop(); refreshThumb(state.fi,state.pi); commit(); };
 $('#cropClear').onclick=()=>{ curPage().crop={left:0,top:0,right:0,bottom:0};
-  syncCropInputs(); drawCrop(); refreshThumb(state.fi,state.pi); };
+  syncCropInputs(); drawCrop(); refreshThumb(state.fi,state.pi); commit(); };
 
 // ---- scan / colour ------------------------------------------------------
 function applyColor(c){
   curPage().color={...c};
   if(state.before) setBefore(false);   // jump back so the change is visible
-  syncColor(); refreshThumb(state.fi,state.pi); refreshPreviewDebounced();
+  syncColor(); refreshThumb(state.fi,state.pi); refreshPreviewDebounced(); commit();
 }
 $('#scanAuto').onclick=()=>applyColor(AUTO_SCAN);
 $('#scanOff').onclick=()=>applyColor(DEF_COLOR);
 $('#cMode').addEventListener('change',e=>{
-  curPage().color.mode=e.target.value;
-  refreshThumbSoon(state.fi,state.pi); refreshPreviewDebounced(); });
+  curPage().color.mode=e.target.value; markManual(); syncFilterChips();
+  refreshThumbSoon(state.fi,state.pi); refreshPreviewDebounced(); commit(); });
 function colorSlider(id,valId,key,scale=1,fmt){
   $(id).addEventListener('input',e=>{
     const raw=parseFloat(e.target.value);
     if(curPage().color.mode==='sample') curPage().color.mode='none'; // manual takes over
     curPage().color[key]=raw/scale;
+    markManual();
     $(valId).textContent=fmt(raw);
-    syncColor(); refreshThumbSoon(state.fi,state.pi); refreshPreviewDebounced();
+    syncColor(); refreshThumbSoon(state.fi,state.pi); refreshPreviewDebounced(); commitSoon();
   });
 }
 colorSlider('#cWhiten','#vWhiten','whiten',100,v=>Math.round(v)+'%');
@@ -574,26 +798,67 @@ $('#beforeBtn').onclick=()=>setBefore(!state.before);
 
 // ---- watermark (global overlay on every page) ---------------------------
 function syncWatermarkBtn(){
+  const w=state.watermark;
   const b=$('#wmToggle');
-  b.classList.toggle('active',state.watermark.on);
-  b.textContent = state.watermark.on ? '🏷 Watermark: On' : '🏷 Watermark: Off';
+  b.classList.toggle('active',w.on);
+  b.textContent = w.on ? '🏷 Watermark: On' : '🏷 Watermark: Off';
+  $('#wmBadge').style.display = w.on ? '' : 'none';
+  // keep the sliders in step with state (e.g. after undo/redo/reset)
+  $('#wmOpacity').value=Math.round(w.opacity*100);
+  $('#vWmOp').textContent=Math.round(w.opacity*100)+'%';
+  $('#wmScale').value=Math.round(w.scale*100);
+  $('#vWmScale').textContent=Math.round(w.scale*100)+'%';
+  $('#wmRotate').value=Math.round(w.rotate);
+  $('#vWmRot').textContent=Math.round(w.rotate)+'°';
+  $('#wmDx').value=Math.round(w.dx*100);
+  $('#vWmDx').textContent=Math.round(w.dx*100)+'%';
+  $('#wmDy').value=Math.round(w.dy*100);
+  $('#vWmDy').textContent=Math.round(w.dy*100)+'%';
 }
 $('#wmToggle').onclick=()=>{
   state.watermark.on=!state.watermark.on;
   syncWatermarkBtn();
   if(state.before) setBefore(false);   // watermark isn't shown on the original
-  refreshAllThumbs(); refreshPreview();
+  refreshAllThumbs(); refreshPreview(); commit();
 };
+// Any watermark tweak: live-update the main preview, debounce the thumbnails
+// (expensive to re-render for every page), and coalesce into one undo step.
 let wmTimer=null;
-$('#wmOpacity').addEventListener('input',e=>{
-  state.watermark.opacity=parseInt(e.target.value)/100;
-  $('#vWmOp').textContent=e.target.value+'%';
+function wmChanged(){
   if(!state.watermark.on) return;
   if(state.before) setBefore(false);
   refreshPreviewDebounced();
   clearTimeout(wmTimer);
   wmTimer=setTimeout(refreshAllThumbs,260);
+  commitSoon();
+}
+$('#wmOpacity').addEventListener('input',e=>{
+  state.watermark.opacity=parseInt(e.target.value)/100;
+  $('#vWmOp').textContent=e.target.value+'%'; wmChanged();
 });
+$('#wmScale').addEventListener('input',e=>{
+  state.watermark.scale=parseInt(e.target.value)/100;
+  $('#vWmScale').textContent=e.target.value+'%'; wmChanged();
+});
+$('#wmRotate').addEventListener('input',e=>{
+  state.watermark.rotate=parseInt(e.target.value);
+  $('#vWmRot').textContent=e.target.value+'°'; wmChanged();
+});
+$('#wmDx').addEventListener('input',e=>{
+  state.watermark.dx=parseInt(e.target.value)/100;
+  $('#vWmDx').textContent=e.target.value+'%'; wmChanged();
+});
+$('#wmDy').addEventListener('input',e=>{
+  state.watermark.dy=parseInt(e.target.value)/100;
+  $('#vWmDy').textContent=e.target.value+'%'; wmChanged();
+});
+$('#wmReset').onclick=()=>{
+  Object.assign(state.watermark,{scale:1,rotate:0,dx:0,dy:0});
+  syncWatermarkBtn();
+  if(state.watermark.on){ if(state.before) setBefore(false);
+    refreshAllThumbs(); refreshPreview(); }
+  commit();
+};
 
 // ---- colour sample (palette learning + transfer) ------------------------
 $('#sampleBtn').onclick=()=>{
@@ -615,7 +880,7 @@ async function uploadSample(file){
     state.palette=pal; state.paletteVersion++; showPalette(pal);
     curPage().color={...curPage().color,mode:'sample'};   // preview immediately
     if(state.before) setBefore(false);
-    syncColor(); refreshThumb(state.fi,state.pi); refreshPreview();
+    syncColor(); refreshThumb(state.fi,state.pi); refreshPreview(); commit();
     toast('Palette learned — click “Apply to all pages”');
   }catch(err){ toast('Error: '+err.message); }
   finally{ t.remove(); }
@@ -643,7 +908,14 @@ function showPalette(pal){
   };
   chip(pal.background,'paper');
   pal.inks.forEach(c=>chip(c,'pen'));
+  (pal.highlights||[]).forEach(c=>chip(c,'highlighter (kept, not copied)'));
   $('#paletteBox').style.display='';
+  const note=$('#hlNote');
+  if((pal.highlights||[]).length){
+    note.style.display=''; note.textContent=
+      'Highlighter colours are detected but never copied onto other pages — '
+      +'existing highlights are preserved where they already are.';
+  }else{ note.style.display='none'; }
   $('#sampleBtn').textContent='🎨 Sample loaded — change';
 }
 $('#applySample').onclick=()=>{
@@ -652,7 +924,7 @@ $('#applySample').onclick=()=>{
   state.files.forEach(f=>f.pages.forEach(p=>{p.color={...p.color,mode:'sample'};n++;}));
   toast(`Sample palette applied to ${n} pages`);
   if(state.before) setBefore(false);
-  syncColor(); refreshAllThumbs(); refreshPreview();
+  syncColor(); refreshAllThumbs(); refreshPreview(); commit();
 };
 
 // ---- batch apply --------------------------------------------------------
@@ -660,19 +932,19 @@ $('#applyAngleAll').onclick=()=>{
   const a=curPage().angle; let n=0;
   state.files.forEach(f=>f.pages.forEach(p=>{p.angle=a;n++;}));
   toast(`Angle ${a.toFixed(1)}° applied to ${n} pages`);
-  refreshAllThumbs(); refreshPreview();
+  refreshAllThumbs(); refreshPreview(); commit();
 };
 $('#applyCropAll').onclick=()=>{
   const c={...curPage().crop}; let n=0;
   state.files.forEach(f=>f.pages.forEach(p=>{p.crop={...c};n++;}));
-  toast(`Margins applied to ${n} pages`); refreshAllThumbs(); drawCrop();
+  toast(`Margins applied to ${n} pages`); refreshAllThumbs(); drawCrop(); commit();
 };
 $('#applyColorAll').onclick=()=>{
   const c={...curPage().color}; let n=0;
   state.files.forEach(f=>f.pages.forEach(p=>{p.color={...c};n++;}));
   toast(`Colour applied to ${n} pages`);
   if(state.before) setBefore(false);
-  refreshAllThumbs(); refreshPreview();
+  refreshAllThumbs(); refreshPreview(); commit();
 };
 
 // ---- nav ----------------------------------------------------------------
@@ -686,6 +958,12 @@ function step(d){
 $('#prevBtn').onclick=()=>step(-1);
 $('#nextBtn').onclick=()=>step(1);
 document.addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==='z'){
+    e.preventDefault();
+    if(e.shiftKey) redo(); else undo();
+    return;
+  }
+  if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==='y'){ e.preventDefault(); redo(); return; }
   if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
   if(e.key==='ArrowLeft')step(-1);
   if(e.key==='ArrowRight')step(1);
@@ -697,8 +975,10 @@ $('#exportBtn').onclick=async()=>{
   state.files.forEach(f=>{
     settings[f.fid]={pages:f.pages.map(p=>({angle:p.angle,crop:p.crop,color:p.color}))};
   });
+  const w=state.watermark;
   const body={job:state.job,dpi:parseInt($('#dpi').value),settings,
-    watermark:state.watermark.on, wmOpacity:state.watermark.opacity};
+    watermark:w.on, wmOpacity:w.opacity, wmScale:w.scale, wmRotate:w.rotate,
+    wmDx:w.dx, wmDy:w.dy};
   const t=toast('<span class="spinner"></span> Rendering PDF(s) at full resolution…',0);
   try{
     const r=await fetch('/api/export',{method:'POST',
@@ -740,6 +1020,26 @@ $('#zoom').addEventListener('input',()=>{
   zoomTimer=setTimeout(()=>{ if(state.files.length) refreshAllThumbs(); },260);
 });
 applyZoom();
+
+// ---- collapsible right-panel tiles --------------------------------------
+// Each tile's open/closed state is remembered in localStorage so the panel
+// comes back the way the user left it. Click the header to toggle.
+(function initCollapsibleTiles(){
+  let saved={};
+  try{ saved=JSON.parse(localStorage.getItem('noteTiles')||'{}'); }catch(_){}
+  const persist=()=>{
+    const st={};
+    document.querySelectorAll('#panel .sec').forEach(s=>
+      st[s.dataset.sec]=s.classList.contains('collapsed'));
+    try{ localStorage.setItem('noteTiles',JSON.stringify(st)); }catch(_){}
+  };
+  document.querySelectorAll('#panel .sec').forEach(sec=>{
+    if(saved[sec.dataset.sec]) sec.classList.add('collapsed');
+    sec.querySelector('h3').addEventListener('click',()=>{
+      sec.classList.toggle('collapsed'); persist();
+    });
+  });
+})();
 </script>
 </body>
 </html>

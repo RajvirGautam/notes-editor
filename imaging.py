@@ -395,8 +395,21 @@ def extract_palette(img: Image.Image) -> dict:
     if not inks:
         inks = [np.array([30, 30, 40], dtype=np.float32)]
 
+    # Drop highlighter-like colours from the *pen* set. A highlighter is a
+    # bright, translucent fill sitting over white paper, so it reads as high
+    # luminance; real pens (even vivid red/blue) are darker strokes. If we kept
+    # highlighters here they'd be used to recolour strokes on every other page
+    # — i.e. the sample's highlight would get "pasted" everywhere. We report
+    # them separately so the UI can still show what was found.
+    HIGHLIGHT_LUM = 150.0
+    pens = [c for c in inks if _lum(c) <= HIGHLIGHT_LUM]
+    highlights = [c for c in inks if _lum(c) > HIGHLIGHT_LUM]
+    if not pens:                                   # keep at least the darkest
+        pens = [min(inks, key=_lum)]
+
     return {"background": [int(round(x)) for x in bg],
-            "inks": [[int(round(v)) for v in c] for c in inks[:6]]}
+            "inks": [[int(round(v)) for v in c] for c in pens[:6]],
+            "highlights": [[int(round(v)) for v in c] for c in highlights[:6]]}
 
 
 def transfer_palette(img: Image.Image, palette: dict) -> Image.Image:
@@ -429,12 +442,24 @@ def transfer_palette(img: Image.Image, palette: dict) -> Image.Image:
     hue_d = np.abs(h[..., None] - ink_h[None, None, :])
     hue_d = np.minimum(hue_d, 1.0 - hue_d)
     idx = np.argmin(hue_d, axis=-1)
+    # Only recolour a pixel to a *coloured* pen when it's genuinely colourful;
+    # otherwise fall back to the neutral/dark pen. This stops faintly-tinted
+    # black text from being tinted toward the nearest coloured pen.
     if ink_lum[neutral_idx] < 110:
-        idx = np.where(s < 0.18, neutral_idx, idx)
+        idx = np.where(s < 0.25, neutral_idx, idx)
     chosen = inks[idx]                                       # H x W x 3
 
     a = alpha[..., None]
     out = bg[None, None, :] * (1.0 - a) + chosen * a
+
+    # Preserve genuine highlighter regions on *this* page rather than flattening
+    # them into a solid pen colour: a highlighter is bright + colourful, so keep
+    # its original pixels. The dark text under the highlight isn't bright, so it
+    # still gets recoloured to the matched pen — we keep the highlight, clean the
+    # ink, and never invent a highlight that wasn't there.
+    highlight = (s > 0.25) & (lum > 160.0)
+    out = np.where(highlight[..., None], rgb, out)
+
     return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8))
 
 
@@ -472,14 +497,26 @@ def _load_watermark() -> Image.Image | None:
     return _watermark_cache["img"]
 
 
-def apply_watermark(img: Image.Image, opacity: float = DEFAULT_WATERMARK_OPACITY
-                    ) -> Image.Image:
+def apply_watermark(img: Image.Image,
+                    opacity: float = DEFAULT_WATERMARK_OPACITY,
+                    scale: float = 1.0,
+                    rotate: float = 0.0,
+                    dx: float = 0.0,
+                    dy: float = 0.0) -> Image.Image:
     """
     Composite the branding watermark over a finished page.
 
-    The overlay is scaled to *cover* the page (preserving its aspect so the logo
-    isn't distorted) and centre-cropped, then alpha-composited. `opacity` scales
-    the overlay's alpha (1.0 == the PNG's native, faint opacity).
+    The overlay is sized relative to a "cover the page" baseline (preserving its
+    aspect so the logo isn't distorted), optionally rotated, then placed on a
+    transparent full-page canvas and alpha-composited.
+
+    Controls (all optional, defaults reproduce the classic full-page look):
+      opacity : alpha multiplier (1.0 == the PNG's native, faint opacity).
+      scale   : size relative to page-cover (1.0 == exactly covers the page;
+                <1 shrinks it into a movable stamp, >1 enlarges it).
+      rotate  : rotation in degrees (counter-clockwise positive).
+      dx, dy  : centre offset as a fraction of page width/height
+                (0,0 == centred; +dx moves right, +dy moves down).
     """
     if opacity <= 0:
         return img
@@ -489,19 +526,33 @@ def apply_watermark(img: Image.Image, opacity: float = DEFAULT_WATERMARK_OPACITY
 
     W, H = img.size
     ww, wh = wm.size
-    scale = max(W / ww, H / wh)
-    nw, nh = max(1, round(ww * scale)), max(1, round(wh * scale))
+
+    # Baseline: the scale that makes the overlay just cover the page. Everything
+    # is expressed as a multiple of that, so `scale=1` == the old behaviour.
+    cover = max(W / ww, H / wh)
+    s = cover * max(scale, 0.01)
+    nw, nh = max(1, round(ww * s)), max(1, round(wh * s))
     layer = wm.resize((nw, nh), Image.LANCZOS)
-    left, top = (nw - W) // 2, (nh - H) // 2
-    layer = layer.crop((left, top, left + W, top + H))
+
+    if abs(rotate) > 1e-3:
+        layer = layer.rotate(rotate, resample=Image.BICUBIC, expand=True,
+                             fillcolor=(0, 0, 0, 0))
 
     if abs(opacity - 1.0) > 1e-3:
         arr = np.asarray(layer, dtype=np.float32)
         arr[..., 3] = np.clip(arr[..., 3] * opacity, 0.0, 255.0)
         layer = Image.fromarray(arr.astype(np.uint8), "RGBA")
 
+    # Place the (possibly smaller/rotated) overlay onto a transparent page-sized
+    # canvas, centred plus the requested offset.
+    lw, lh = layer.size
+    cx = (W - lw) // 2 + int(round(dx * W))
+    cy = (H - lh) // 2 + int(round(dy * H))
+    canvas = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    canvas.alpha_composite(layer, (cx, cy))
+
     base = img.convert("RGBA")
-    return Image.alpha_composite(base, layer).convert("RGB")
+    return Image.alpha_composite(base, canvas).convert("RGB")
 
 
 def to_png_bytes(img: Image.Image) -> bytes:
