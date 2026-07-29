@@ -155,6 +155,7 @@
   .sec h3::before{font-size:15px;line-height:1}
   .sec[data-sec=remover] h3::before{content:'🪄'}
   .sec[data-sec=merge] h3::before{content:'🗂️'}
+  .sec[data-sec=ovedit] h3::before{content:'🎛️'}
   .sec[data-sec=shapes] h3::before{content:'🔷'}
   .sec[data-sec=rotate] h3::before{content:'🔄'}
   .sec[data-sec=tilt] h3::before{content:'📐'}
@@ -232,21 +233,26 @@
   .removal-band .rem-del:hover{background:#ff4757}
   .drag-band{position:absolute;left:0;right:0;background:rgba(139,92,246,.32);border:2px solid #8b5cf6;pointer-events:none}
   /* shape filler (free polygons that hide content under a colour fill) */
+  /* polygon fills sit below the border art; editing UI (handles, draft,
+     mouse preview) lives on #shapeUi above it so it stays visible */
   #shapeLayer{position:absolute;inset:0;z-index:3;pointer-events:none;overflow:visible}
+  #shapeUi{position:absolute;inset:0;z-index:5;pointer-events:none;overflow:visible}
   #shapeLayer polygon.shp{pointer-events:auto;cursor:grab}
   #shapeLayer polygon.shp.sel{stroke:#8b5cf6;stroke-width:1.5;stroke-dasharray:4 3}
-  #shapeLayer .vtx{fill:#fff;stroke:#8b5cf6;stroke-width:2;cursor:move;pointer-events:auto}
-  #shapeLayer .mid{fill:#8b5cf6;stroke:#fff;stroke-width:1;opacity:.6;cursor:copy;pointer-events:auto}
-  #shapeLayer .mid:hover{opacity:1}
-  #shapeLayer .draft-line{stroke:#8b5cf6;stroke-width:1.5;stroke-dasharray:5 4;pointer-events:none}
-  #shapeLayer .draft-prev{stroke:#8b5cf6;stroke-width:1.5;stroke-dasharray:5 4;pointer-events:none}
-  #shapeLayer .draft-prev.faint{opacity:.35}
-  #shapeLayer .v0{fill:#34d399;stroke:#fff;stroke-width:2;pointer-events:auto;cursor:pointer}
-  #frame.before #shapeLayer,#frame.deleted #shapeLayer{display:none}
-  #frame.magic-mode #shapeLayer *{pointer-events:none}
+  #shapeUi .vtx{fill:#fff;stroke:#8b5cf6;stroke-width:2;cursor:move;pointer-events:auto}
+  #shapeUi .mid{fill:#8b5cf6;stroke:#fff;stroke-width:1;opacity:.6;cursor:copy;pointer-events:auto}
+  #shapeUi .mid:hover{opacity:1}
+  #shapeUi .draft-line{stroke:#8b5cf6;stroke-width:1.5;stroke-dasharray:5 4;pointer-events:none}
+  #shapeUi .draft-prev{stroke:#8b5cf6;stroke-width:1.5;stroke-dasharray:5 4;pointer-events:none}
+  #shapeUi .draft-prev.faint{opacity:.35}
+  #shapeUi .v0{fill:#34d399;stroke:#fff;stroke-width:2;pointer-events:auto;cursor:pointer}
+  #frame.before #shapeLayer,#frame.deleted #shapeLayer,
+  #frame.before #shapeUi,#frame.deleted #shapeUi{display:none}
+  #frame.magic-mode #shapeLayer *,#frame.magic-mode #shapeUi *{pointer-events:none}
   #frame.shape-draw,#frame.shape-pick{cursor:crosshair!important}
-  #frame.shape-draw #shapeLayer *,#frame.shape-pick #shapeLayer *{pointer-events:none}
-  #frame.shape-draw #shapeLayer .v0{pointer-events:auto}
+  #frame.shape-draw #shapeLayer *,#frame.shape-pick #shapeLayer *,
+  #frame.shape-draw #shapeUi *,#frame.shape-pick #shapeUi *{pointer-events:none}
+  #frame.shape-draw #shapeUi .v0{pointer-events:auto}
   #frame.shape-draw .ov-item,#frame.shape-pick .ov-item{pointer-events:none}
   input[type=color]{width:38px;height:30px;padding:2px;background:var(--panel2);
     border:1px solid var(--line);border-radius:6px;cursor:pointer;flex:0 0 auto}
@@ -273,6 +279,14 @@
   .ov-item .ov-del:hover{background:#ff4757;color:#fff;border-color:#ff4757}
   .ov-item .ov-handle{position:absolute;right:-8px;bottom:-8px;width:14px;height:14px;
     border-radius:4px;background:var(--acc);border:2px solid #fff;cursor:nwse-resize}
+  .ov-item.selected{outline:2px solid var(--acc);outline-offset:1px}
+  .ov-item.selected .ov-tools{display:flex}
+  .ov-item.stretched img{height:100%}
+  .ov-item .ov-stretch{position:absolute;left:50%;bottom:-8px;margin-left:-7px;
+    width:14px;height:14px;border-radius:4px;background:var(--acc);
+    border:2px solid #fff;cursor:ns-resize;display:none}
+  .ov-item:hover .ov-stretch,.ov-item.selected .ov-stretch,
+  .ov-item.dragging .ov-stretch{display:block}
   button.pick-active{background:var(--acc2)!important;border-color:var(--acc)!important;
     color:#fff!important;font-weight:600}
   body.merge-pick #rail .pcard{outline:1px dashed var(--acc);outline-offset:-2px;cursor:copy}
@@ -281,7 +295,7 @@
     src:url('/fonts/Urbanist-var.ttf') format('truetype');font-weight:100 900}
   input[type=text]{background:var(--panel2);border:1px solid var(--line);
     border-radius:6px;color:var(--txt);padding:6px 8px;font:inherit;min-width:0}
-  #borderLayer{position:absolute;inset:0;pointer-events:none}
+  #borderLayer{position:absolute;inset:0;pointer-events:none;z-index:4}
   #borderLayer img{position:absolute;max-width:none}
   #borderLayer .bfill{position:absolute;background:#fff}
   #borderLayer .bclip{position:absolute;background:rgba(13,14,22,.62)}
@@ -395,6 +409,7 @@
         </div>
         <div id="ovLayer"></div>
         <svg id="shapeLayer"></svg>
+        <svg id="shapeUi"></svg>
         <div class="guide h" id="gTop"><div class="grip"></div></div>
         <div class="guide h" id="gBot"><div class="grip"></div></div>
         <div class="guide v" id="gLeft"><div class="grip"></div></div>
@@ -453,6 +468,77 @@
           <span class="muted" style="flex:1;width:auto">Delete the source page after
             pulling (restore it any time from its thumbnail)</span></label>
         <div id="ovList"></div>
+      </div>
+    </div>
+
+    <div class="sec" data-sec="ovedit" id="ovEditSec" style="display:none">
+      <h3>Pulled content <span class="badge" style="display:inline-block">selected</span></h3>
+      <div class="secbody">
+        <div id="ovEditInfo" class="muted" style="margin-bottom:8px"></div>
+
+        <div class="crow"><span>Width</span><span id="vOvW" class="unit">50%</span>
+          <input type="range" id="ovW" min="4" max="150" step="1"/></div>
+        <div class="crow"><span>Height (stretch)</span><span id="vOvH" class="unit">auto</span>
+          <input type="range" id="ovH" min="2" max="200" step="1"/></div>
+        <div class="btnrow" style="margin-bottom:8px">
+          <button id="ovHAuto" style="flex:1">Reset height (keep aspect)</button>
+        </div>
+        <div class="crow"><span>Horizontal</span><span id="vOvX" class="unit">0%</span>
+          <input type="range" id="ovX" min="-20" max="120" step="1"/></div>
+        <div class="crow"><span>Vertical</span><span id="vOvY" class="unit">0%</span>
+          <input type="range" id="ovY" min="-20" max="120" step="1"/></div>
+
+        <div class="muted" style="margin:10px 0 6px">Trim margins <span class="unit">(% of the source page)</span></div>
+        <div class="row"><label>Top</label>
+          <input type="number" id="ovMT" step="0.5" min="0" max="49"/><span class="unit">%</span></div>
+        <div class="row"><label>Bottom</label>
+          <input type="number" id="ovMB" step="0.5" min="0" max="49"/><span class="unit">%</span></div>
+        <div class="row"><label>Left</label>
+          <input type="number" id="ovML" step="0.5" min="0" max="49"/><span class="unit">%</span></div>
+        <div class="row"><label>Right</label>
+          <input type="number" id="ovMR" step="0.5" min="0" max="49"/><span class="unit">%</span></div>
+        <div class="btnrow" style="margin-top:6px;margin-bottom:8px">
+          <button id="ovMReset" style="flex:1">Follow source margins</button>
+        </div>
+
+        <div class="muted" style="margin:10px 0 6px">Rotate &amp; tilt</div>
+        <div class="btnrow" style="margin-bottom:6px">
+          <button id="ovRot90" style="flex:1">↻ Rotate 90° <span class="unit">(now <span id="vOvRot">0</span>°)</span></button>
+        </div>
+        <div class="crow"><span>Tilt</span><span id="vOvAngle" class="unit">0.0°</span>
+          <input type="range" id="ovAngle" min="-12" max="12" step="0.1"/></div>
+        <div class="btnrow" style="margin-bottom:8px">
+          <button id="ovRotReset" style="flex:1">Follow source rotation &amp; tilt</button>
+        </div>
+
+        <div class="muted" style="margin:10px 0 6px">Colour <span class="unit">(this content only)</span></div>
+        <div class="btnrow" style="margin-bottom:8px">
+          <button id="ovScanAuto" style="flex:1">✨ Auto scan</button>
+        </div>
+        <div class="row" style="margin-bottom:8px"><label>Mode</label>
+          <select id="ovCMode">
+            <option value="none">Colour</option>
+            <option value="grayscale">Grayscale</option>
+            <option value="bw">Black &amp; white</option>
+          </select></div>
+        <div class="crow"><span>Anti-yellowing</span><span id="vOvCDeyellow" class="unit">0%</span>
+          <input type="range" id="ovCDeyellow" min="0" max="100" step="1"/></div>
+        <div class="crow"><span>Whiten paper</span><span id="vOvCWhiten" class="unit">0%</span>
+          <input type="range" id="ovCWhiten" min="0" max="100" step="1"/></div>
+        <div class="crow"><span>Brightness</span><span id="vOvCBright" class="unit">1.00</span>
+          <input type="range" id="ovCBright" min="0.5" max="1.6" step="0.01"/></div>
+        <div class="crow"><span>Contrast</span><span id="vOvCContrast" class="unit">1.00</span>
+          <input type="range" id="ovCContrast" min="0.5" max="2.5" step="0.01"/></div>
+        <div class="crow"><span>Saturation</span><span id="vOvCSat" class="unit">1.00</span>
+          <input type="range" id="ovCSat" min="0" max="2" step="0.01"/></div>
+        <div class="btnrow" style="margin-top:6px">
+          <button id="ovCReset" style="flex:1">Follow source colour</button>
+        </div>
+
+        <div class="btnrow" style="margin-top:12px">
+          <button id="ovResetAll" style="flex:1">Reset all overrides</button>
+          <button id="ovRemoveBtn" style="flex:1">✕ Remove</button>
+        </div>
       </div>
     </div>
 
@@ -771,6 +857,7 @@ const state = {
   before:false,                     // global before/after view toggle
   magicMode:false,                  // magic remover tool active flag
   mergePick:false,                  // merge-pages: waiting for a source page pick
+  ovSel:-1,                         // index of the selected pulled-content overlay
   shapeDraw:false,                  // shape filler: placing polygon points
   shapePick:false,                  // shape filler: eyedropper (pick colour from page)
   shapeSel:-1,                      // index of the selected shape on this page
@@ -840,7 +927,7 @@ function snapshot(){
     files: state.files.map(f=>({
       pages: f.pages.map(p=>({src:p.src, angle:p.angle, rotate:p.rotate||0, crop:{...p.crop},
         removals:[...(p.removals||[])],
-        overlays:(p.overlays||[]).map(o=>({...o})),
+        overlays:(p.overlays||[]).map(copyOv),
         shapes:copyShapes(p.shapes),
         color:{...p.color}, bfit:{...(p.bfit||DEF_BFIT)}, deleted:!!p.deleted,
         wmo:p.wmo?{...p.wmo}:null}))
@@ -897,7 +984,7 @@ function applySnapshot(str){
       p.angle = sp.angle; p.rotate = sp.rotate||0;
       p.crop = {...sp.crop}; p.color = {...sp.color};
       p.removals = sp.removals ? [...sp.removals] : [];
-      p.overlays = (sp.overlays||[]).map(o=>({...o}));
+      p.overlays = (sp.overlays||[]).map(copyOv);
       p.shapes = copyShapes(sp.shapes);
       p.bfit = {...DEF_BFIT, ...(sp.bfit||legacyBfit||{})};
       p.deleted = !!sp.deleted;
@@ -1220,6 +1307,7 @@ function loadPage(){
   const f=curFile(), p=curPage(); if(!p) return;
   state.pendingGaps = [];           // selections don't carry across pages
   state.shapeSel=-1; state.shapeDraft=[];  // shape edits don't either
+  state.ovSel=-1;                   // neither does the pulled-content selection
   if(state.shapeDraw) setShapeDraw(false);
   if(state.shapePick) setShapePick(false);
   $('#pageLabel').textContent=`${f.name} — page ${state.pi+1} / ${f.npages}`;
@@ -1557,12 +1645,31 @@ $('#autoGapsBtn').onclick = async () => {
 // crop guides live in. The source page's angle/rotation/crop/gaps/colour are
 // resolved live at render time, so refining the source page refines the pulled
 // content too. Export & thumbnails composite server-side with identical maths.
+// An overlay may also carry its own overrides — crop (trim margins), color,
+// angle/rotate and an explicit height fraction h (stretch). Any of them unset
+// means "follow the source page", which keeps old overlays working unchanged.
+function copyOv(o){
+  const c={...o};
+  if(o.crop) c.crop={...o.crop};
+  if(o.color) c.color={...o.color};
+  return c;
+}
+// Effective render params for an overlay: its own override when set, else the
+// live value from its source page.
+function ovEff(o){
+  const sf=state.files[o.sf], sp=sf&&sf.pages[o.sp]; if(!sp) return null;
+  return {angle:o.angle??sp.angle, rotate:o.rotate??(sp.rotate||0),
+    crop:{...(o.crop||sp.crop)}, color:{...(o.color||sp.color)}};
+}
 function ovResolve(o){
   const sf=state.files[o.sf]; if(!sf) return null;
   const sp=sf.pages[o.sp]; if(!sp) return null;
-  return {fid:sf.fid, page:sp.src??o.sp, angle:sp.angle, rotate:sp.rotate||0,
-    crop:{...sp.crop}, removals:[...(sp.removals||[])], color:{...sp.color},
+  const e=ovEff(o);
+  const r={fid:sf.fid, page:sp.src??o.sp, angle:e.angle, rotate:e.rotate,
+    crop:e.crop, removals:[...(sp.removals||[])], color:e.color,
     shapes:packShapes(sp.shapes), x:o.x, y:o.y, w:o.w};
+  if(o.h) r.h=o.h;
+  return r;
 }
 function ovQuery(p){
   const list=(p.overlays||[]).map(ovResolve).filter(Boolean);
@@ -1584,10 +1691,15 @@ function pageDims(p){
   const swap=Math.round((p.rotate||0)/90)%2!==0;
   return swap ? {w:p.h, h:p.w} : {w:p.w, h:p.h};
 }
-// Overlay height as a fraction of the destination page (from source geometry).
+// Overlay height as a fraction of the destination page: the explicit stretch
+// override when set, otherwise derived from the effective source geometry.
 function ovHeightFrac(o, dest){
+  if(o.h) return o.h;
   const sf=state.files[o.sf], sp=sf&&sf.pages[o.sp]; if(!sp) return 0;
-  const sd=pageDims(sp), dd=pageDims(dest), c=sp.crop;
+  const e=ovEff(o);
+  const swap=Math.round((e.rotate||0)/90)%2!==0;
+  const sd=swap?{w:sp.h,h:sp.w}:{w:sp.w,h:sp.h};
+  const dd=pageDims(dest), c=e.crop;
   const kw=Math.max(0.02,1-c.left-c.right), kh=Math.max(0.02,1-c.top-c.bottom);
   return o.w*(dd.w/dd.h)*((kh*sd.h)/(kw*sd.w));
 }
@@ -1601,13 +1713,16 @@ function drawOverlays(){
   badge.textContent=list.length;
   badge.style.display=list.length?'':'none';
   syncOvList();
-  if(!p) return;
+  if(!p){ syncOvPanel(); return; }
+  if(state.ovSel>=list.length) state.ovSel=-1;
   list.forEach((o,idx)=>{
     const it=document.createElement('div');
     it.className='ov-item';
     it.style.left=(o.x*100)+'%';
     it.style.top=(o.y*100)+'%';
     it.style.width=(o.w*100)+'%';
+    if(o.h){ it.style.height=(o.h*100)+'%'; it.classList.add('stretched'); }
+    if(idx===state.ovSel) it.classList.add('selected');
     const img=document.createElement('img');
     img.draggable=false; img.alt=''; img.src=ovImgUrl(o);
     const tools=document.createElement('div'); tools.className='ov-tools';
@@ -1622,15 +1737,20 @@ function drawOverlays(){
     tools.appendChild(tag); tools.appendChild(del);
     const hd=document.createElement('div'); hd.className='ov-handle';
     hd.title='Drag to resize';
-    it.appendChild(img); it.appendChild(tools); it.appendChild(hd);
-    // drag to move
+    const sh=document.createElement('div'); sh.className='ov-stretch';
+    sh.title='Drag to stretch the height';
+    it.appendChild(img); it.appendChild(tools); it.appendChild(hd); it.appendChild(sh);
+    // drag to move (a plain click just selects it and opens its controls)
     it.addEventListener('pointerdown',ev=>{
-      if(ev.target===hd||state.magicMode||state.before) return;
+      if(ev.target===hd||ev.target===sh||state.magicMode||state.before) return;
       ev.preventDefault(); ev.stopPropagation();
+      selectOverlay(idx);
       ovDragging=true; it.classList.add('dragging'); it.style.cursor='grabbing';
       const fr=$('#pageImg').getBoundingClientRect();
       const sx=ev.clientX, sy=ev.clientY, ox=o.x, oy=o.y;
+      let moved=false;
       const move=e=>{
+        moved=true;
         o.x=Math.min(1.2,Math.max(-0.2, ox+(e.clientX-sx)/fr.width));
         o.y=Math.min(1.2,Math.max(-0.2, oy+(e.clientY-sy)/fr.height));
         it.style.left=(o.x*100)+'%'; it.style.top=(o.y*100)+'%';
@@ -1639,25 +1759,52 @@ function drawOverlays(){
         document.removeEventListener('pointermove',move);
         document.removeEventListener('pointerup',up);
         ovDragging=false; it.classList.remove('dragging'); it.style.cursor='';
-        refreshThumb(state.fi,state.pi); commit();
+        syncOvPanel();
+        if(moved){ refreshThumb(state.fi,state.pi); commit(); }
       };
       document.addEventListener('pointermove',move);
       document.addEventListener('pointerup',up);
     });
-    // corner handle: resize (width; height follows the image's aspect)
+    // corner handle: resize width (a set stretch scales along, else the
+    // height follows the image's aspect)
     hd.addEventListener('pointerdown',ev=>{
       ev.preventDefault(); ev.stopPropagation();
+      selectOverlay(idx);
       ovDragging=true; it.classList.add('dragging');
       const fr=$('#pageImg').getBoundingClientRect();
-      const sx=ev.clientX, ow=o.w;
+      const sx=ev.clientX, ow=o.w, oh0=o.h;
       const move=e=>{
         o.w=Math.min(1.5,Math.max(0.04, ow+(e.clientX-sx)/fr.width));
         it.style.width=(o.w*100)+'%';
+        if(oh0){ o.h=Math.min(2,Math.max(0.02, oh0*o.w/ow));
+                 it.style.height=(o.h*100)+'%'; }
       };
       const up=()=>{
         document.removeEventListener('pointermove',move);
         document.removeEventListener('pointerup',up);
         ovDragging=false; it.classList.remove('dragging');
+        syncOvPanel();
+        refreshThumb(state.fi,state.pi); commit();
+      };
+      document.addEventListener('pointermove',move);
+      document.addEventListener('pointerup',up);
+    });
+    // bottom handle: stretch the height independently of the aspect
+    sh.addEventListener('pointerdown',ev=>{
+      ev.preventDefault(); ev.stopPropagation();
+      selectOverlay(idx);
+      ovDragging=true; it.classList.add('dragging');
+      const fr=$('#pageImg').getBoundingClientRect();
+      const sy=ev.clientY, oh0=o.h||ovHeightFrac(o,p);
+      const move=e=>{
+        o.h=Math.min(2,Math.max(0.02, oh0+(e.clientY-sy)/fr.height));
+        it.style.height=(o.h*100)+'%'; it.classList.add('stretched');
+      };
+      const up=()=>{
+        document.removeEventListener('pointermove',move);
+        document.removeEventListener('pointerup',up);
+        ovDragging=false; it.classList.remove('dragging');
+        syncOvPanel();
         refreshThumb(state.fi,state.pi); commit();
       };
       document.addEventListener('pointermove',move);
@@ -1665,6 +1812,7 @@ function drawOverlays(){
     });
     layer.appendChild(it);
   });
+  syncOvPanel();
 }
 function syncOvList(){
   const list=$('#ovList'); if(!list) return;
@@ -1678,21 +1826,182 @@ function syncOvList(){
     const f=state.files[o.sf];
     const item=document.createElement('div');
     item.className='rem-item';
+    item.style.cursor='pointer';
+    item.title='Click to select and open its controls';
     item.innerHTML=`<span>From page ${o.sp+1}`
       +(state.files.length>1&&f?` · ${escapeHtml(f.name)}`:'')
       +`</span><button class="rem-del-btn" title="Remove pulled content">✕</button>`;
-    item.querySelector('.rem-del-btn').onclick=()=>removeOverlay(idx);
+    item.onclick=()=>selectOverlay(idx);
+    item.querySelector('.rem-del-btn').onclick=ev=>{ ev.stopPropagation(); removeOverlay(idx); };
     list.appendChild(item);
   });
 }
 function removeOverlay(idx){
   const p=curPage(); if(!p||!p.overlays) return;
   p.overlays.splice(idx,1);
+  state.ovSel=-1;
   drawOverlays();
   refreshThumb(state.fi,state.pi);
   commit();
   toast('Pulled content removed — restore the source page from its thumbnail if needed');
 }
+
+// ---- selected pulled content: its own control panel -----------------------
+// Clicking an overlay selects it and opens a full set of individual controls
+// (size/stretch, position, trim margins, rotation, colour). Edits become
+// overrides stored on the overlay itself; anything left untouched keeps
+// following its source page live.
+function ovSelObj(){
+  const p=curPage(); return (p&&(p.overlays||[])[state.ovSel])||null;
+}
+function selectOverlay(idx){
+  state.ovSel=idx;
+  $('#ovLayer').querySelectorAll('.ov-item').forEach((el,i)=>
+    el.classList.toggle('selected', i===idx));
+  const sec=$('#ovEditSec');
+  sec.classList.remove('collapsed');
+  syncOvPanel();
+  if(idx>=0) sec.scrollIntoView({block:'nearest'});
+}
+function deselectOverlay(){
+  if(state.ovSel<0) return;
+  state.ovSel=-1;
+  $('#ovLayer').querySelectorAll('.ov-item').forEach(el=>el.classList.remove('selected'));
+  syncOvPanel();
+}
+// Re-render just the selected overlay in place (geometry now, image debounced)
+// so slider edits feel live without rebuilding the whole layer.
+let ovImgTimer=null;
+function refreshOvSel(){
+  const o=ovSelObj();
+  const it=$('#ovLayer').querySelectorAll('.ov-item')[state.ovSel];
+  if(!o||!it) return;
+  it.style.left=(o.x*100)+'%'; it.style.top=(o.y*100)+'%';
+  it.style.width=(o.w*100)+'%';
+  if(o.h){ it.style.height=(o.h*100)+'%'; it.classList.add('stretched'); }
+  else{ it.style.height=''; it.classList.remove('stretched'); }
+  clearTimeout(ovImgTimer);
+  ovImgTimer=setTimeout(()=>{
+    const img=it.querySelector('img'), url=ovImgUrl(o);
+    if(img&&img.getAttribute('src')!==url) img.src=url;
+  },140);
+}
+// Fill the panel from the selected overlay (skipping the input being typed in
+// so live edits aren't clobbered mid-keystroke).
+function syncOvPanel(){
+  const sec=$('#ovEditSec'); if(!sec) return;
+  const o=ovSelObj();
+  if(!o){ sec.style.display='none'; return; }
+  sec.style.display='';
+  const setV=(id,v)=>{ const el=$(id); if(el!==document.activeElement) el.value=v; };
+  const sf=state.files[o.sf];
+  $('#ovEditInfo').textContent=`From page ${o.sp+1}`
+    +(state.files.length>1&&sf?` · ${sf.name}`:'')
+    +' — untouched settings keep following that page.';
+  const p=curPage(), e=ovEff(o);
+  setV('#ovW',Math.round(o.w*100));
+  $('#vOvW').textContent=Math.round(o.w*100)+'%';
+  setV('#ovH',Math.round((o.h||ovHeightFrac(o,p))*100));
+  $('#vOvH').textContent=o.h?Math.round(o.h*100)+'%':'auto';
+  setV('#ovX',Math.round(o.x*100));
+  $('#vOvX').textContent=Math.round(o.x*100)+'%';
+  setV('#ovY',Math.round(o.y*100));
+  $('#vOvY').textContent=Math.round(o.y*100)+'%';
+  setV('#ovMT',+(e.crop.top*100).toFixed(1));
+  setV('#ovMB',+(e.crop.bottom*100).toFixed(1));
+  setV('#ovML',+(e.crop.left*100).toFixed(1));
+  setV('#ovMR',+(e.crop.right*100).toFixed(1));
+  setV('#ovAngle',e.angle);
+  $('#vOvAngle').textContent=(+e.angle).toFixed(1)+'°';
+  $('#vOvRot').textContent=Math.round(e.rotate||0);
+  const c=e.color;
+  if(['none','grayscale','bw'].includes(c.mode)) setV('#ovCMode',c.mode);
+  setV('#ovCDeyellow',Math.round((c.deyellow||0)*100));
+  $('#vOvCDeyellow').textContent=Math.round((c.deyellow||0)*100)+'%';
+  setV('#ovCWhiten',Math.round(c.whiten*100));
+  $('#vOvCWhiten').textContent=Math.round(c.whiten*100)+'%';
+  setV('#ovCBright',c.brightness);
+  $('#vOvCBright').textContent=(+c.brightness).toFixed(2);
+  setV('#ovCContrast',c.contrast);
+  $('#vOvCContrast').textContent=(+c.contrast).toFixed(2);
+  setV('#ovCSat',c.saturation);
+  $('#vOvCSat').textContent=(+c.saturation).toFixed(2);
+}
+// Live edit helper: mutate the selected overlay, repaint it, keep the panel
+// in sync and coalesce the undo step.
+function ovEditLive(fn){
+  const o=ovSelObj(); if(!o) return;
+  fn(o, ovEff(o));
+  refreshOvSel(); syncOvPanel(); commitSoon();
+}
+// Edit finished (slider released / value committed): thumbnail + solid undo.
+function ovEditDone(){
+  if(!ovSelObj()) return;
+  refreshThumb(state.fi,state.pi); flushCommit();
+}
+(function initOvPanel(){
+  const on=(id,ev,fn)=>$(id).addEventListener(ev,fn);
+  // size & position
+  on('#ovW','input',()=>ovEditLive(o=>{
+    const w=Math.min(1.5,Math.max(0.04,(+$('#ovW').value||4)/100));
+    if(o.h) o.h=Math.min(2,Math.max(0.02,o.h*w/o.w));
+    o.w=w;
+  }));
+  on('#ovH','input',()=>ovEditLive(o=>{
+    o.h=Math.min(2,Math.max(0.02,(+$('#ovH').value||2)/100));
+  }));
+  $('#ovHAuto').onclick=()=>{ ovEditLive(o=>{ delete o.h; }); ovEditDone(); };
+  on('#ovX','input',()=>ovEditLive(o=>{
+    o.x=Math.min(1.2,Math.max(-0.2,(+$('#ovX').value||0)/100)); }));
+  on('#ovY','input',()=>ovEditLive(o=>{
+    o.y=Math.min(1.2,Math.max(-0.2,(+$('#ovY').value||0)/100)); }));
+  ['#ovW','#ovH','#ovX','#ovY'].forEach(id=>on(id,'change',ovEditDone));
+  // trim margins → own crop override
+  const marg={'#ovMT':'top','#ovMB':'bottom','#ovML':'left','#ovMR':'right'};
+  Object.entries(marg).forEach(([id,k])=>{
+    on(id,'input',()=>ovEditLive((o,e)=>{
+      if(!o.crop) o.crop={...e.crop};
+      o.crop[k]=Math.min(0.49,Math.max(0,(+$(id).value||0)/100));
+    }));
+    on(id,'change',ovEditDone);
+  });
+  $('#ovMReset').onclick=()=>{ ovEditLive(o=>{ delete o.crop; }); ovEditDone(); };
+  // rotation & tilt → own angle/rotate override
+  $('#ovRot90').onclick=()=>{
+    ovEditLive((o,e)=>{ o.rotate=((e.rotate||0)+90)%360; });
+    ovEditDone();
+  };
+  on('#ovAngle','input',()=>ovEditLive(o=>{ o.angle=+$('#ovAngle').value; }));
+  on('#ovAngle','change',ovEditDone);
+  $('#ovRotReset').onclick=()=>{
+    ovEditLive(o=>{ delete o.angle; delete o.rotate; }); ovEditDone(); };
+  // colour → own color override
+  const ovColor=mut=>ovEditLive((o,e)=>{ if(!o.color) o.color={...e.color}; mut(o.color); });
+  $('#ovScanAuto').onclick=()=>{ ovColor(c=>Object.assign(c,AUTO_SCAN)); ovEditDone(); };
+  $('#ovCMode').onchange=()=>{ ovColor(c=>c.mode=$('#ovCMode').value); ovEditDone(); };
+  const col={'#ovCDeyellow':c=>c.deyellow=(+$('#ovCDeyellow').value)/100,
+             '#ovCWhiten':c=>c.whiten=(+$('#ovCWhiten').value)/100,
+             '#ovCBright':c=>c.brightness=+$('#ovCBright').value,
+             '#ovCContrast':c=>c.contrast=+$('#ovCContrast').value,
+             '#ovCSat':c=>c.saturation=+$('#ovCSat').value};
+  Object.entries(col).forEach(([id,mut])=>{
+    on(id,'input',()=>ovColor(mut));
+    on(id,'change',ovEditDone);
+  });
+  $('#ovCReset').onclick=()=>{ ovEditLive(o=>{ delete o.color; }); ovEditDone(); };
+  // reset / remove
+  $('#ovResetAll').onclick=()=>{
+    ovEditLive(o=>{ delete o.crop; delete o.color; delete o.angle;
+                    delete o.rotate; delete o.h; });
+    ovEditDone();
+    toast('All overrides cleared — this content follows its source page again');
+  };
+  $('#ovRemoveBtn').onclick=()=>{ if(state.ovSel>=0) removeOverlay(state.ovSel); };
+  // clicking the bare page (not an overlay) drops the selection
+  $('#frame').addEventListener('pointerdown',ev=>{
+    if(state.ovSel>=0&&!ev.target.closest('.ov-item')) deselectOverlay();
+  });
+})();
 function setMergePick(on){
   state.mergePick=on;
   const b=$('#mergePickBtn');
@@ -1709,6 +2018,7 @@ $('#mergePickBtn').onclick=()=>{
 };
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'&&state.mergePick) setMergePick(false);
+  else if(e.key==='Escape'&&state.ovSel>=0) deselectOverlay();
 });
 function pullPageContent(sfi,spi){
   setMergePick(false);
@@ -1728,7 +2038,9 @@ function pullPageContent(sfi,spi){
   const o={sf:sfi, sp:spi, x:Math.min(0.9,dc.left), y:Math.min(1.05,y), w};
   if(!dest.overlays) dest.overlays=[];
   dest.overlays.push(o);
-  let msg=`Pulled page ${spi+1}’s content here — drag it into place, resize by the corner`;
+  state.ovSel=dest.overlays.length-1;
+  let msg=`Pulled page ${spi+1}’s content here — drag it into place; its own `
+    +`controls (margins, stretch, colour…) are in the side panel`;
   if($('#mergeDelSrc').checked && !sp.deleted){
     sp.deleted=true;
     const e=cards[`${sfi}:${spi}`];
@@ -1738,7 +2050,7 @@ function pullPageContent(sfi,spi){
     }
     msg+='; source page deleted (its thumbnail restores it)';
   }
-  drawOverlays(); syncDeletedUI(); drawBorder();
+  drawOverlays(); selectOverlay(state.ovSel); syncDeletedUI(); drawBorder();
   refreshThumb(state.fi,state.pi);
   commit();
   toast(msg,4500);
@@ -1769,8 +2081,8 @@ function svgEl(tag,attrs){
   return e;
 }
 function drawShapes(){
-  const layer=$('#shapeLayer'); if(!layer) return;
-  layer.innerHTML='';
+  const layer=$('#shapeLayer'), ui=$('#shapeUi'); if(!layer||!ui) return;
+  layer.innerHTML=''; ui.innerHTML='';
   const p=curPage();
   const list=(p&&p.shapes)||[];
   const badge=$('#shapeBadge');
@@ -1782,6 +2094,7 @@ function drawShapes(){
   const W=img.clientWidth, H=img.clientHeight;
   if(!W||!H) return;
   layer.setAttribute('width',W); layer.setAttribute('height',H);
+  ui.setAttribute('width',W); ui.setAttribute('height',H);
   const px=pt=>(pt[0]*W)+','+(pt[1]*H);
   list.forEach((s,idx)=>{
     const poly=svgEl('polygon',{points:s.pts.map(px).join(' '),fill:s.color,
@@ -1799,13 +2112,13 @@ function drawShapes(){
       const c=svgEl('circle',{cx:(a[0]+b[0])/2*W, cy:(a[1]+b[1])/2*H, r:5,
         'class':'mid'});
       c.addEventListener('pointerdown',ev=>midDown(ev,state.shapeSel,j));
-      layer.appendChild(c);
+      ui.appendChild(c);
     }
     sel.pts.forEach((pt,j)=>{
       const c=svgEl('circle',{cx:pt[0]*W, cy:pt[1]*H, r:6, 'class':'vtx'});
       c.addEventListener('pointerdown',ev=>vtxDown(ev,state.shapeSel,j));
       c.addEventListener('dblclick',ev=>{ ev.stopPropagation(); delVertex(state.shapeSel,j); });
-      layer.appendChild(c);
+      ui.appendChild(c);
     });
   }
   // in-progress polygon: dashed outline + green first point that closes it
@@ -1814,7 +2127,7 @@ function drawShapes(){
     const line=svgEl(d.length>2?'polygon':'polyline',
       {points:d.map(px).join(' '),
        fill:d.length>2?'rgba(139,92,246,.18)':'none','class':'draft-line'});
-    layer.appendChild(line);
+    ui.appendChild(line);
     d.forEach((pt,j)=>{
       const c=svgEl('circle',{cx:pt[0]*W, cy:pt[1]*H, r:j===0?7:4,
         'class':j===0?'v0':'vtx'});
@@ -1823,7 +2136,7 @@ function drawShapes(){
           ev.stopPropagation(); ev.preventDefault(); finishDraft(); });
         c.setAttribute('r',8);
       }
-      layer.appendChild(c);
+      ui.appendChild(c);
     });
   }
 }
@@ -1831,8 +2144,8 @@ function drawShapes(){
 // placed point to the cursor, plus a fainter closing line back to the start
 // so you can see the shape that would form. Pass null to clear it.
 function draftPreview(fx,fy){
-  const layer=$('#shapeLayer'); if(!layer) return;
-  layer.querySelectorAll('.draft-prev').forEach(e=>e.remove());
+  const ui=$('#shapeUi'); if(!ui) return;
+  ui.querySelectorAll('.draft-prev').forEach(e=>e.remove());
   if(fx==null||!state.shapeDraw||!state.shapeDraft.length) return;
   const img=$('#pageImg');
   const W=img.clientWidth, H=img.clientHeight;
@@ -1841,10 +2154,10 @@ function draftPreview(fx,fy){
   const first=d[0], last=d[d.length-1];
   // snap to the green start point when close enough to close the polygon
   if(d.length>=3 && Math.hypot((fx-first[0])*W,(fy-first[1])*H)<12){ fx=first[0]; fy=first[1]; }
-  layer.appendChild(svgEl('polyline',{fill:'none','class':'draft-prev',
+  ui.appendChild(svgEl('polyline',{fill:'none','class':'draft-prev',
     points:`${last[0]*W},${last[1]*H} ${fx*W},${fy*H}`}));
   if(d.length>=2 && !(fx===first[0]&&fy===first[1]))
-    layer.appendChild(svgEl('polyline',{fill:'none','class':'draft-prev faint',
+    ui.appendChild(svgEl('polyline',{fill:'none','class':'draft-prev faint',
       points:`${fx*W},${fy*H} ${first[0]*W},${first[1]*H}`}));
 }
 function shapeChanged(soon){
@@ -3162,7 +3475,7 @@ function draftState(){
     files: state.files.map(f=>({name:f.name,
       pages: f.pages.map(p=>({src:p.src, angle:p.angle, rotate:p.rotate||0, crop:{...p.crop},
         removals:[...(p.removals||[])],
-        overlays:(p.overlays||[]).map(o=>({...o})),
+        overlays:(p.overlays||[]).map(copyOv),
         shapes:copyShapes(p.shapes), color:{...p.color},
         bfit:{...(p.bfit||DEF_BFIT)}, deleted:!!p.deleted,
         wmo:p.wmo?{...p.wmo}:null}))})),
@@ -3299,7 +3612,7 @@ function applyDraftState(s){
       p.angle=sp.angle; p.rotate=sp.rotate||0;
       p.crop={...sp.crop}; p.color={...DEF_COLOR, ...sp.color};
       p.removals=sp.removals?[...sp.removals]:[];
-      p.overlays=(sp.overlays||[]).map(o=>({...o}));
+      p.overlays=(sp.overlays||[]).map(copyOv);
       p.shapes=copyShapes(sp.shapes);
       p.bfit={...DEF_BFIT, ...(sp.bfit||{})};
       p.deleted=!!sp.deleted;

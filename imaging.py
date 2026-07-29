@@ -893,7 +893,11 @@ def paste_overlays(img: Image.Image, overlays: list[dict], crop: dict | None,
             if ov.get("shapes"):
                 src = draw_shapes(src, ov["shapes"], ov.get("crop"))
             ow = max(1, int(round(float(ov.get("w", 0.5)) * full_w)))
-            oh = max(1, int(round(ow * src.height / max(1, src.width))))
+            # Optional explicit height fraction ("stretch") — falls back to the
+            # source's natural aspect when absent.
+            hf = float(ov.get("h", 0) or 0)
+            oh = (max(1, int(round(hf * full_h))) if hf > 0
+                  else max(1, int(round(ow * src.height / max(1, src.width)))))
             src = src.resize((ow, oh), Image.LANCZOS)
             x = int(round((float(ov.get("x", 0)) - cl) * full_w))
             y = int(round((float(ov.get("y", 0)) - ct) * full_h))
