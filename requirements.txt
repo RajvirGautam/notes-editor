@@ -2,3 +2,4 @@ pymupdf>=1.24
 numpy>=1.26
 pillow>=10.0
 flask>=3.0
+playwright>=1.40

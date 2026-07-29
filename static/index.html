@@ -6,9 +6,10 @@
 <title>Notes Deskewer</title>
 <style>
   :root{
-    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
-    --txt:#e6e9ef; --mut:#9aa3b2; --acc:#5b9dff; --acc2:#3a6fd8;
-    --good:#3ecf8e; --warn:#f0a35e;
+    --bg:#0e0e13; --panel:#131218; --panel2:#1b1a23; --line:#2a2936;
+    --txt:#f2f1f7; --mut:#9c9aae; --acc:#8b5cf6; --acc2:#7743ea;
+    --good:#34d399; --warn:#ef8fae; --hover:#242231; --bdr-hover:#3f3d54;
+    --red:#f43f5e;
   }
   *{box-sizing:border-box}
   html,body{margin:0;height:100%}
@@ -20,16 +21,16 @@
   header .sub{color:var(--mut);font-size:12px}
   .grow{flex:1}
   button{font:inherit;color:var(--txt);background:var(--panel2);
-    border:1px solid var(--line);border-radius:7px;padding:7px 12px;cursor:pointer}
-  button:hover{border-color:#3a4152;background:#232833}
-  button.primary{background:var(--acc2);border-color:var(--acc2);color:#fff;font-weight:600}
-  button.primary:hover{background:var(--acc)}
+    border:1px solid var(--line);border-radius:11px;padding:8px 14px;cursor:pointer}
+  button:hover{border-color:var(--bdr-hover);background:var(--hover)}
+  button.primary{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+  button.primary:hover{background:var(--acc2);border-color:var(--acc2)}
   button:disabled{opacity:.45;cursor:not-allowed}
   .histnav{display:flex;gap:2px;margin-right:4px}
   .navbtn{display:flex;align-items:center;justify-content:center;
     width:30px;height:30px;padding:0;font-size:18px;line-height:1;font-weight:600;
     border-radius:8px;color:var(--txt)}
-  .navbtn:not(:disabled):hover{background:#232833;border-color:#3a4152}
+  .navbtn:not(:disabled):hover{background:var(--hover);border-color:var(--bdr-hover)}
   .navbtn:disabled{opacity:.3}
   .wrap{display:flex;height:calc(100vh - 53px)}
   /* left rail */
@@ -41,16 +42,36 @@
   #railHead .zi{color:var(--mut);font-size:14px;flex:0 0 auto}
   #railHead input[type=range]{flex:1;accent-color:var(--acc)}
   #railBody{padding:10px}
+  .emptyRail{background:var(--panel2);border:1px solid var(--line);
+    border-radius:14px;padding:18px 14px;margin:6px 2px}
+  .emptyRail .er-ico{font-size:22px;margin-bottom:10px}
+  .emptyRail .er-title{font-weight:600;font-size:14px;margin-bottom:4px}
   .filegrp{margin-bottom:14px}
   .filename{font-size:12px;color:var(--mut);padding:2px 4px 6px;
-    word-break:break-word;border-bottom:1px solid var(--line);margin-bottom:8px}
+    word-break:break-word;border-bottom:1px solid var(--line);margin-bottom:8px;
+    display:flex;align-items:center;gap:6px}
+  .filename .fname{flex:1;min-width:0}
+  .reorderBtn{flex:0 0 auto;width:26px;height:24px;padding:0;font-size:13px;
+    line-height:1;border-radius:6px;display:flex;align-items:center;
+    justify-content:center}
+  .reorderBtn.active{background:var(--acc);border-color:var(--acc);color:#fff}
+  /* reorder mode: up/down arrows on every thumbnail */
+  .pthumb .pmove{position:absolute;top:4px;left:4px;display:none;
+    flex-direction:column;gap:4px;z-index:4}
+  .filegrp.reordering .pthumb .pmove{display:flex}
+  .pmove button{width:24px;height:24px;padding:0;display:flex;
+    align-items:center;justify-content:center;font-size:11px;line-height:1;
+    border-radius:6px;background:rgba(23,25,34,.82);border:1px solid var(--line)}
+  .pmove button:not(:disabled):hover{background:var(--acc);
+    border-color:var(--acc);color:#fff}
+  .pmove button:disabled{opacity:.35}
   .cards{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
   .pcard{width:var(--thumbw);cursor:pointer;border-radius:8px;padding:4px;
     border:2px solid transparent;transition:border-color .12s,background .12s}
   .pcard:hover{background:var(--panel2)}
-  .pcard.active{border-color:var(--acc);background:#1b2534}
+  .pcard.active{border-color:var(--acc);background:#251f3a}
   .pthumb{position:relative;width:100%;background:#fff;border-radius:5px;
-    overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.45);line-height:0;
+    overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.45);line-height:0;
     aspect-ratio:1/1.3;display:flex;align-items:center;justify-content:center}
   .pthumb img{width:100%;height:100%;object-fit:contain;background:#fff}
   .pthumb .ph{color:#bbb;font-size:11px}
@@ -59,14 +80,50 @@
   .pcap .dot{width:6px;height:6px;border-radius:50%;background:var(--line);flex:0 0 auto}
   .pcard.edited .pcap .dot{background:var(--good)}
   .pcard.active .pcap{color:var(--txt)}
+  /* deleted pages: kept in place, greyed out, excluded from export */
+  .pthumb .pdel{position:absolute;top:4px;right:4px;width:24px;height:24px;padding:0;
+    display:flex;align-items:center;justify-content:center;font-size:12px;
+    line-height:1;border-radius:6px;background:rgba(23,25,34,.82);
+    border:1px solid var(--line);opacity:0;transition:opacity .12s;z-index:4}
+  .pcard:hover .pthumb .pdel,.pcard.deleted .pthumb .pdel{opacity:1}
+  .pthumb .pdel:hover{background:#f06292;border-color:#f06292;color:#fff}
+  .pcard.deleted .pthumb .pdel:hover{background:var(--good);border-color:var(--good);color:#fff}
+  .pcard.deleted .pthumb img{filter:grayscale(1);opacity:.3}
+  .pcard.deleted .pthumb::after{content:'DELETED';position:absolute;left:50%;top:50%;
+    transform:translate(-50%,-50%) rotate(-12deg);font:700 11px/1.4 inherit;
+    letter-spacing:1.2px;color:#f47da2;background:rgba(23,25,34,.88);
+    padding:3px 9px;border-radius:5px;pointer-events:none;z-index:3}
+  .pcard.deleted .pcap{opacity:.55;text-decoration:line-through}
+  #frame.deleted #pageImg{filter:grayscale(1);opacity:.42}
+  #frame.deleted .guide,#frame.deleted .shade{display:none}
+  button.danger{background:var(--panel2);border-color:var(--line);color:var(--red)}
+  button.danger:hover{background:#2b1a22;border-color:var(--red);color:#f87c92}
+  button.restore{background:#16342b;border-color:#23604d;color:#63dcb1}
+  button.restore:hover{background:#1b4237;border-color:var(--good);color:#93ebcd}
   /* center */
-  #stage{flex:1;display:flex;flex-direction:column;min-width:0}
+  #stage{flex:1;display:flex;flex-direction:column;min-width:0;position:relative}
+  /* margin:auto (not align/justify center) so zoomed-in overflow stays
+     reachable by scrolling — flex centering clips the top-left corner */
   #canvasArea{flex:1;position:relative;overflow:auto;display:flex;
-    align-items:center;justify-content:center;padding:22px;background:#0b0d11}
-  #frame{position:relative;line-height:0;box-shadow:0 6px 30px rgba(0,0,0,.5)}
-  #pageImg{display:block;max-width:100%;max-height:76vh;background:#fff}
+    padding:22px;background:var(--bg)}
+  #frame{position:relative;margin:auto;line-height:0;box-shadow:0 10px 34px rgba(0,0,0,.55)}
+  #pageImg{display:block;background:#fff}
+  /* centre-page zoom pill */
+  #zoomCtl{position:absolute;left:12px;bottom:56px;z-index:6;display:flex;
+    align-items:center;gap:8px;background:rgba(27,26,35,.95);
+    border:1px solid var(--line);border-radius:20px;padding:5px 12px;
+    box-shadow:0 4px 16px rgba(0,0,0,.4)}
+  #zoomCtl input[type=range]{width:110px;accent-color:var(--acc)}
+  #zoomCtl .zbtn{width:22px;height:22px;padding:0;border-radius:50%;
+    font-size:14px;line-height:1}
+  #vPageZoom{font-size:11px;color:var(--mut);width:38px;text-align:right;
+    cursor:pointer;user-select:none}
+  /* sidebar resize handles */
+  .vsplit{flex:0 0 5px;cursor:col-resize;background:transparent;
+    position:relative;z-index:10;transition:background .12s;touch-action:none}
+  .vsplit:hover,.vsplit.dragging{background:var(--acc)}
   /* crop overlay */
-  .shade{position:absolute;background:rgba(10,12,16,.62);pointer-events:none}
+  .shade{position:absolute;background:rgba(13,14,22,.62);pointer-events:none}
   .guide{position:absolute;background:var(--acc);opacity:.9}
   .guide.h{left:0;right:0;height:2px;cursor:ns-resize}
   .guide.v{top:0;bottom:0;width:2px;cursor:ew-resize}
@@ -78,28 +135,50 @@
   /* right controls */
   #panel{width:280px;flex:0 0 280px;border-left:1px solid var(--line);
     background:var(--panel);overflow-y:auto;padding:16px}
-  .sec{margin-bottom:12px;border:1px solid var(--line);border-radius:9px;
+  /* quick-apply bar — floats inside the editor under the undo/redo buttons;
+     shortcuts to the batch "→ all pages / → remaining" actions in the panel */
+  #quickbar{position:absolute;top:10px;right:14px;z-index:30;display:flex;
+    align-items:center;gap:6px;background:var(--panel);
+    border:1px solid var(--line);border-radius:9px;padding:6px 8px;
+    box-shadow:0 4px 16px rgba(0,0,0,.45)}
+  #quickbar .qlbl{font-size:11px;text-transform:uppercase;letter-spacing:.5px;
+    color:var(--mut);font-weight:600;margin:0 2px 0 4px}
+  #quickbar .qsep{width:1px;align-self:stretch;background:var(--line);margin:0 4px}
+  #quickbar button{padding:5px 9px;font-size:12px;white-space:nowrap}
+  #stage:has(#drop:not(.hidden)) #quickbar{display:none}
+  .sec{margin-bottom:12px;border:1px solid var(--line);border-radius:14px;
     background:var(--panel2);overflow:hidden}
   .sec h3{margin:0;font-size:12px;text-transform:uppercase;
-    letter-spacing:.7px;color:var(--mut);font-weight:600;
-    display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;
-    padding:11px 12px}
-  .sec h3:hover{color:var(--txt);background:#232833}
-  .sec h3::after{content:'▾';margin-left:auto;font-size:11px;color:var(--mut);
-    transition:transform .15s ease}
-  .sec.collapsed h3::after{transform:rotate(-90deg)}
+    letter-spacing:1px;color:var(--txt);font-weight:600;
+    display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;
+    padding:14px}
+  .sec h3::before{font-size:15px;line-height:1}
+  .sec[data-sec=remover] h3::before{content:'🪄'}
+  .sec[data-sec=merge] h3::before{content:'🗂️'}
+  .sec[data-sec=rotate] h3::before{content:'🔄'}
+  .sec[data-sec=tilt] h3::before{content:'📐'}
+  .sec[data-sec=crop] h3::before{content:'✂️'}
+  .sec[data-sec=sample] h3::before{content:'🎨'}
+  .sec[data-sec=scan] h3::before{content:'🖌️'}
+  .sec[data-sec=watermark] h3::before{content:'🛡️'}
+  .sec[data-sec=pyqs] h3::before{content:'🔖'}
+  .sec[data-sec=borders] h3::before{content:'🖼️'}
+  .sec h3:hover{background:var(--hover)}
+  .sec h3::after{content:'›';margin-left:auto;font-size:16px;color:var(--mut);
+    transition:transform .15s ease;transform:rotate(90deg)}
+  .sec.collapsed h3::after{transform:rotate(0deg)}
   .sec h3 .badge{font-size:10px;font-weight:600;letter-spacing:.3px;
     padding:2px 6px;border-radius:20px;background:var(--acc2);color:#fff;
     text-transform:none}
-  .secbody{padding:0 12px 14px}
+  .secbody{padding:0 14px 14px}
   .sec.collapsed .secbody{display:none}
   /* filter preset chips */
   .chips{display:flex;flex-wrap:wrap;gap:6px}
   .chip{padding:6px 11px;font-size:12px;border:1px solid var(--line);
     border-radius:20px;background:var(--panel);color:var(--mut);cursor:pointer;
     transition:border-color .12s,background .12s,color .12s}
-  .chip:hover{border-color:#3a4152;color:var(--txt)}
-  .chip.active{background:var(--acc2);border-color:var(--acc2);color:#fff;font-weight:600}
+  .chip:hover{border-color:var(--bdr-hover);color:var(--txt)}
+  .chip.active{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
   .chip.manual{border-style:dashed}
   .row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
   .row label{width:52px;color:var(--mut);font-size:12px}
@@ -113,12 +192,14 @@
   select{background:var(--panel2);border:1px solid var(--line);border-radius:6px;
     color:var(--txt);padding:6px 8px;font:inherit}
   /* dropzone */
-  #drop{position:absolute;inset:0;display:flex;flex-direction:column;
+  #drop{position:absolute;inset:18px;display:flex;flex-direction:column;
     align-items:center;justify-content:center;gap:14px;color:var(--mut);
-    text-align:center;padding:30px}
+    text-align:center;padding:30px;background:#16151d;
+    border:2px dashed #2e2c3c;border-radius:20px}
   #drop.hidden{display:none}
-  #drop .big{font-size:34px}
-  #drop.hot{background:#131a26;color:var(--txt)}
+  #drop .big{font-size:38px}
+  #drop strong{color:var(--txt);font-size:17px}
+  #drop.hot{background:#221d33;border-color:var(--acc);color:var(--txt)}
   #drop .hint{max-width:340px;font-size:13px}
   .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
     background:var(--panel2);border:1px solid var(--line);padding:10px 16px;
@@ -135,28 +216,101 @@
   .crow input[type=range]{grid-column:1/3;width:100%}
   /* before/after toggle */
   button.toggle.active{background:var(--warn);border-color:var(--warn);
-    color:#1a1200;font-weight:600}
+    color:#411226;font-weight:600}
   #frame.before .guide,#frame.before .shade{display:none}
-  select#cMode{flex:1}
-  #sampleSec.hot{outline:2px dashed var(--acc);outline-offset:4px;border-radius:8px;
-    background:#131a26}
+  /* magic remover styles */
+  button.magic-active{background:#8b5cf6!important;border-color:#8b5cf6!important;color:#fff!important;font-weight:700;box-shadow:0 0 10px rgba(139,92,246,.4)}
+  #frame.magic-mode{cursor:crosshair!important}
+  .removal-band{position:absolute;left:0;right:0;background:rgba(139,92,246,.22);border-top:1px dashed #8b5cf6;border-bottom:1px dashed #8b5cf6;pointer-events:auto;display:flex;align-items:center;justify-content:space-between;padding:0 8px;box-sizing:border-box;z-index:3}
+  .removal-band .rem-label{font-size:11px;background:rgba(23,25,34,.85);color:#c9a8ff;padding:2px 6px;border-radius:4px;font-weight:600}
+  .removal-band .rem-btns{display:flex;align-items:center;gap:6px}
+  .removal-band .rem-apply{font-size:12px;font-weight:600;background:#8b5cf6;color:#fff;border:none;border-radius:4px;cursor:pointer;padding:3px 10px;line-height:1.2}
+  .removal-band .rem-apply:hover{background:#7c4fe0}
+  .removal-band .rem-del{font-size:12px;background:rgba(139,92,246,.85);color:#fff;border:none;border-radius:3px;cursor:pointer;padding:1px 5px;line-height:1}
+  .removal-band .rem-del:hover{background:#ff4757}
+  .drag-band{position:absolute;left:0;right:0;background:rgba(139,92,246,.32);border:2px solid #8b5cf6;pointer-events:none}
+  .rem-item{display:flex;align-items:center;justify-content:space-between;background:var(--panel);border:1px solid var(--line);padding:5px 8px;border-radius:6px;margin-bottom:4px;font-size:12px}
+  .rem-item .rem-del-btn{background:transparent;border:none;color:#ff4757;cursor:pointer;padding:0 4px;font-size:14px;font-weight:bold}
+  .rem-item .rem-del-btn:hover{color:#ff6b81}
+  /* merge pages: content pulled from another page, draggable + resizable */
+  #ovLayer{position:absolute;inset:0;z-index:2;pointer-events:none}
+  #frame.before #ovLayer,#frame.deleted #ovLayer{display:none}
+  #frame.magic-mode #ovLayer .ov-item{pointer-events:none}
+  .ov-item{position:absolute;pointer-events:auto;cursor:grab;line-height:0;
+    outline:1.5px dashed rgba(93,110,232,.6);outline-offset:1px}
+  .ov-item:hover,.ov-item.dragging{outline:2px solid var(--acc)}
+  .ov-item img{width:100%;height:auto;display:block;background:#fff}
+  .ov-item .ov-tools{position:absolute;top:-26px;left:0;display:none;gap:4px;
+    align-items:center;line-height:1.2}
+  .ov-item:hover .ov-tools,.ov-item.dragging .ov-tools{display:flex}
+  .ov-item .ov-tag{font-size:11px;background:rgba(23,25,34,.85);color:#8b97f2;
+    padding:2px 7px;border-radius:4px;font-weight:600;white-space:nowrap}
+  .ov-item .ov-del{width:20px;height:20px;padding:0;font-size:11px;border-radius:4px;
+    background:rgba(23,25,34,.85);border:1px solid var(--line);color:#f48fb1}
+  .ov-item .ov-del:hover{background:#ff4757;color:#fff;border-color:#ff4757}
+  .ov-item .ov-handle{position:absolute;right:-8px;bottom:-8px;width:14px;height:14px;
+    border-radius:4px;background:var(--acc);border:2px solid #fff;cursor:nwse-resize}
+  button.pick-active{background:var(--acc2)!important;border-color:var(--acc)!important;
+    color:#fff!important;font-weight:600}
+  body.merge-pick #rail .pcard{outline:1px dashed var(--acc);outline-offset:-2px;cursor:copy}
+  /* borders (branded frame around the crop margins) */
+  @font-face{font-family:'Urbanist';
+    src:url('/fonts/Urbanist-var.ttf') format('truetype');font-weight:100 900}
+  input[type=text]{background:var(--panel2);border:1px solid var(--line);
+    border-radius:6px;color:var(--txt);padding:6px 8px;font:inherit;min-width:0}
+  #borderLayer{position:absolute;inset:0;pointer-events:none}
+  #borderLayer img{position:absolute;max-width:none}
+  #borderLayer .bfill{position:absolute;background:#fff}
+  #borderLayer .bclip{position:absolute;background:rgba(13,14,22,.62)}
+  #borderLayer .bh{position:absolute;transform:translateY(-50%);
+    font-family:'Urbanist',sans-serif;line-height:1;white-space:nowrap}
+  #frame.before #borderLayer,#frame.deleted #borderLayer{display:none!important}
+  /* bordered mode sizes the page explicitly (frame stays fixed on screen) */
+  #frame.bordered #pageImg{max-width:none;max-height:none}
+  /* history (saved drafts) modal */
+  #histOverlay{position:fixed;inset:0;background:rgba(10,11,18,.66);z-index:60;
+    display:flex;align-items:flex-start;justify-content:center;padding:60px 20px}
+  #histOverlay.hidden{display:none}
+  #histModal{width:min(680px,100%);max-height:calc(100vh - 120px);display:flex;
+    flex-direction:column;background:var(--panel);border:1px solid var(--line);
+    border-radius:12px;box-shadow:0 18px 60px rgba(0,0,0,.6);overflow:hidden}
+  #histHead{display:flex;align-items:center;gap:10px;padding:14px 16px;
+    border-bottom:1px solid var(--line)}
+  #histHead h2{margin:0;font-size:14px;font-weight:600;letter-spacing:.2px}
+  #histHead .hx{width:28px;height:28px;padding:0;border-radius:8px;font-size:15px}
+  #histBody{overflow-y:auto;padding:12px 14px}
+  .histrow{display:flex;align-items:center;gap:12px;padding:10px;border:1px solid var(--line);
+    border-radius:10px;background:var(--panel2);margin-bottom:10px}
+  .histrow .hthumb{width:46px;height:60px;flex:0 0 46px;border-radius:5px;
+    background:#fff;object-fit:cover;box-shadow:0 2px 8px rgba(0,0,0,.4)}
+  .histrow .hmain{flex:1;min-width:0}
+  .histrow .hname{font-weight:600;font-size:13px;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  .histrow .hmeta{color:var(--mut);font-size:11.5px;margin-top:3px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .histrow .hbtns{display:flex;gap:6px;flex:0 0 auto}
+  .histrow .hbtns button{padding:6px 10px;font-size:12px}
+  .histrow.current{border-color:var(--acc)}
+  .histrow.current .hname::after{content:'· open now';color:var(--acc);
+    font-weight:400;font-size:11px;margin-left:6px}
 </style>
 </head>
 <body>
 <header>
+  <button id="discardBtn" disabled>↺ Discard &amp; open another</button>
+  <h1>Notes Deskewer</h1>
+  <span class="sub" id="jobinfo">Straighten &amp; crop scanned notes — fully local</span>
+  <div class="grow"></div>
   <div class="histnav">
     <button id="undoBtn" class="navbtn" title="Undo (⌘Z)" disabled>↶</button>
     <button id="redoBtn" class="navbtn" title="Redo (⌘⇧Z)" disabled>↷</button>
   </div>
-  <h1>Notes Deskewer</h1>
-  <span class="sub" id="jobinfo">Straighten &amp; crop scanned notes — fully local</span>
-  <div class="grow"></div>
-  <button id="discardBtn" disabled>↺ Discard &amp; open another</button>
+  <button id="histBtn" title="Saved drafts — every export is kept here with all its edits">🕘 History</button>
   <button id="addBtn">+ Add PDFs</button>
   <label class="row" style="margin:0;gap:6px">
     <span class="unit">Export DPI</span>
     <select id="dpi">
-      <option>150</option><option selected>200</option><option>300</option>
+      <option>150</option><option>200</option><option selected>300</option>
     </select>
   </label>
   <button id="exportBtn" class="primary" disabled>Export</button>
@@ -169,10 +323,20 @@
       <input type="range" id="zoom" min="90" max="230" step="5" value="150"
         title="Thumbnail zoom"/>
     </div>
-    <div id="railBody"><div class="muted" style="padding:8px">No files yet.</div></div>
+    <div id="railBody"><div class="emptyRail"><div class="er-ico">📂</div><div class="er-title">No files yet.</div><div class="muted">Add PDF files to get started.</div></div></div>
   </aside>
+  <div class="vsplit" id="railSplit" title="Drag to resize — double-click to reset"></div>
 
   <section id="stage">
+    <div id="quickbar">
+      <span class="qlbl">Margins</span>
+      <button id="qbCropAll" title="Apply this page's crop margins to all pages">All pages</button>
+      <button id="qbCropRemaining" title="Apply this page's crop margins from this page to the end">Remaining</button>
+      <span class="qsep"></span>
+      <span class="qlbl">Color</span>
+      <button id="qbColorAll" title="Apply this page's colour settings to all pages">All pages</button>
+      <button id="qbColorRemaining" title="Apply this page's colour settings from this page to the end">Remaining</button>
+    </div>
     <div id="canvasArea">
       <div id="drop">
         <div class="big">📄↻</div>
@@ -188,24 +352,105 @@
         <div class="shade" id="shBot"></div>
         <div class="shade" id="shLeft"></div>
         <div class="shade" id="shRight"></div>
+        <div id="borderLayer" style="display:none">
+          <div class="bfill" id="bfL"></div>
+          <div class="bfill" id="bfR"></div>
+          <div class="bfill" id="bfT"></div>
+          <div class="bfill" id="bfB"></div>
+          <div class="bclip" id="bcL"></div>
+          <div class="bclip" id="bcR"></div>
+          <div class="bclip" id="bcT"></div>
+          <div class="bclip" id="bcB"></div>
+          <img id="borderImg" alt="" draggable="false"/>
+          <div id="bhLabel" class="bh"></div>
+          <div id="bhName" class="bh"></div>
+        </div>
+        <div id="ovLayer"></div>
         <div class="guide h" id="gTop"><div class="grip"></div></div>
         <div class="guide h" id="gBot"><div class="grip"></div></div>
         <div class="guide v" id="gLeft"><div class="grip"></div></div>
         <div class="guide v" id="gRight"><div class="grip"></div></div>
+        <div id="removalOverlay" style="position:absolute;inset:0;pointer-events:none;z-index:3" id="removalOverlay"></div>
+        <div id="dragBand" class="drag-band" style="display:none;z-index:4;pointer-events:none"></div>
       </div>
+    </div>
+    <div id="zoomCtl">
+      <button class="zbtn" id="pzOut" title="Zoom out">−</button>
+      <input type="range" id="pageZoom" min="10" max="200" step="5" value="100"
+        title="Page zoom"/>
+      <button class="zbtn" id="pzIn" title="Zoom in">+</button>
+      <span id="vPageZoom" title="Double-click to reset">100%</span>
     </div>
     <div style="padding:8px 14px;border-top:1px solid var(--line);display:flex;
          align-items:center;gap:12px;background:var(--panel)">
       <button id="prevBtn">‹ Prev</button>
       <span id="pageLabel" class="muted">—</span>
       <button id="nextBtn">Next ›</button>
+      <button id="delPageBtn" class="danger" title="Exclude this page from the export (it stays here, greyed out)">🗑 Delete page</button>
       <div class="grow"></div>
       <button id="beforeBtn" class="toggle" title="Toggle original vs. corrected (all pages)">👁 Show original</button>
       <span id="editState" class="muted"></span>
     </div>
   </section>
 
+  <div class="vsplit" id="panelSplit" title="Drag to resize — double-click to reset"></div>
   <aside id="panel">
+    <div class="sec" data-sec="remover">
+      <h3>Magic Remover <span id="removerBadge" class="badge" style="display:none">0</span></h3>
+      <div class="secbody">
+        <div class="muted" style="margin-bottom:8px">Select and crop horizontal blank spaces on the page. Content below is shifted up, leaving paper margins at the bottom.</div>
+        <div class="btnrow" style="margin-bottom:10px">
+          <button id="magicBtn" style="flex:1">🪄 Select Blank Gap</button>
+          <button id="autoGapsBtn" style="flex:1">🔍 Auto-detect</button>
+        </div>
+        <div id="removalList" style="margin-bottom:10px"></div>
+        <div class="btnrow">
+          <button id="clearRemovalsBtn" style="flex:1">Clear Gaps</button>
+          <button id="applyRemovalsAll">Gaps → all pages</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sec" data-sec="merge">
+      <h3>Merge pages <span id="ovBadge" class="badge" style="display:none">0</span></h3>
+      <div class="secbody">
+        <div class="muted" style="margin-bottom:8px">Pull another page's content
+          onto this page, then drag it anywhere and resize it with the corner
+          handle — perfect when two half-empty pages should become one.</div>
+        <button id="mergePickBtn" style="width:100%">📥 Pull content from another page…</button>
+        <label class="row" style="margin:8px 0 6px;gap:8px">
+          <input type="checkbox" id="mergeDelSrc" checked
+            style="accent-color:var(--acc);width:auto;flex:0 0 auto"/>
+          <span class="muted" style="flex:1;width:auto">Delete the source page after
+            pulling (restore it any time from its thumbnail)</span></label>
+        <div id="ovList"></div>
+      </div>
+    </div>
+
+    <div class="sec" data-sec="rotate">
+      <h3>Rotate page</h3>
+      <div class="secbody">
+        <div class="anglebig"><span id="rotVal">0</span><span class="unit">°</span></div>
+        <input type="range" id="rotSlider" min="-180" max="180" step="1" value="0"/>
+        <div class="btnrow" style="margin-top:10px">
+          <button id="rot90" style="flex:1">↻ Rotate 90° clockwise</button>
+          <button id="rotReset">Reset (0°)</button>
+        </div>
+        <div class="btnrow" style="margin-top:8px">
+          <button id="rotFixAll" class="primary" style="flex:1"
+            title="Snap every page to the nearest 90° and turn landscape pages upright">⇧ Fix all — portrait upright</button>
+        </div>
+        <div class="btnrow" style="margin-top:8px">
+          <button id="applyRotAll" style="flex:1">Rotation → all pages</button>
+          <button id="applyRotRemaining" style="flex:1">Rotation → remaining</button>
+        </div>
+        <div class="muted" style="margin-top:8px">Slider turns just this page; the
+          90° button quarter-turns it (crop margins follow). Fix all snaps every
+          page to the nearest 90° and rotates landscape pages into upright
+          portrait orientation.</div>
+      </div>
+    </div>
+
     <div class="sec" data-sec="tilt">
       <h3>Tilt correction</h3>
       <div class="secbody">
@@ -217,6 +462,13 @@
           <button data-da="0.1">+0.1</button>
           <button data-da="1">+1°</button>
           <button id="angleReset">Auto</button>
+        </div>
+        <div class="btnrow" style="margin-top:8px">
+          <button id="angleZero" style="flex:1">Reset angle (0°)</button>
+        </div>
+        <div class="btnrow" style="margin-top:8px">
+          <button id="applyAngleAll" style="flex:1">Angle → all pages</button>
+          <button id="applyAngleRemaining" style="flex:1">Angle → remaining</button>
         </div>
       </div>
     </div>
@@ -233,8 +485,14 @@
         <div class="row"><label>Right</label>
           <input type="number" id="mRight" step="0.5" min="0" max="49"/><span class="unit">%</span></div>
         <div class="btnrow" style="margin-top:6px">
-          <button id="cropAuto">Auto-detect</button>
-          <button id="cropClear">No crop</button>
+          <button id="cropAuto" style="flex:1">Auto-detect</button>
+        </div>
+        <div class="btnrow" style="margin-top:8px">
+          <button id="cropClear" style="flex:1">Reset margins (no crop)</button>
+        </div>
+        <div class="btnrow" style="margin-top:8px">
+          <button id="applyCropAll" style="flex:1">Margins → all pages</button>
+          <button id="applyCropRemaining" style="flex:1">Margins → remaining</button>
         </div>
       </div>
     </div>
@@ -258,30 +516,11 @@
       </div>
     </div>
 
-    <div class="sec" data-sec="filters">
-      <h3>Filters</h3>
-      <div class="secbody">
-        <div id="filterChips" class="chips">
-          <button class="chip" data-filter="none">Original</button>
-          <button class="chip" data-filter="soft">Soft White</button>
-          <button class="chip" data-filter="white">Clean White</button>
-          <button class="chip" data-filter="bright">Bright White</button>
-          <button class="chip" data-filter="vivid">Vivid Ink</button>
-          <button class="chip" data-filter="gray">Gray on White</button>
-          <button class="chip" data-filter="bw">B&amp;W Ink</button>
-          <button class="chip manual" data-filter="manual">Manual</button>
-        </div>
-        <div class="muted" style="margin-top:8px">One-tap white-paper looks. Adjusting
-          any slider below switches to <em>Manual</em>.</div>
-      </div>
-    </div>
-
     <div class="sec" data-sec="scan">
       <h3>Scan / Color <span class="unit">(manual)</span></h3>
       <div class="secbody">
         <div class="btnrow" style="margin-bottom:12px">
           <button id="scanAuto" class="primary" style="flex:1">✨ Auto scan</button>
-          <button id="scanOff">Off</button>
         </div>
         <div class="row" style="margin-bottom:12px"><label>Mode</label>
           <select id="cMode">
@@ -289,6 +528,8 @@
             <option value="grayscale">Grayscale</option>
             <option value="bw">Black &amp; white</option>
           </select></div>
+        <div class="crow"><span>Anti-yellowing</span><span id="vDeyellow" class="unit">0%</span>
+          <input type="range" id="cDeyellow" min="0" max="100" step="1" value="0"/></div>
         <div class="crow"><span>Whiten paper</span><span id="vWhiten" class="unit">0%</span>
           <input type="range" id="cWhiten" min="0" max="100" step="1" value="0"/></div>
         <div class="crow"><span>Brightness</span><span id="vBright" class="unit">1.00</span>
@@ -297,19 +538,39 @@
           <input type="range" id="cContrast" min="0.5" max="2.5" step="0.01" value="1"/></div>
         <div class="crow"><span>Saturation</span><span id="vSat" class="unit">1.00</span>
           <input type="range" id="cSat" min="0" max="2" step="0.01" value="1"/></div>
+        <div class="btnrow" style="margin-top:10px">
+          <button id="scanOff" style="flex:1">Reset color (off)</button>
+        </div>
+        <div class="btnrow" style="margin-top:8px">
+          <button id="applyColorAll" style="flex:1">Color → all pages</button>
+          <button id="applyColorRemaining" style="flex:1">Color → remaining</button>
+        </div>
       </div>
     </div>
 
     <div class="sec" data-sec="watermark">
       <h3>Watermark <span id="wmBadge" class="badge" style="display:none">ON</span></h3>
       <div class="secbody">
-        <div class="btnrow" style="margin-bottom:12px">
+        <div class="btnrow" style="margin-bottom:8px">
           <button id="wmToggle" class="toggle" style="flex:1">🏷 Watermark: Off</button>
         </div>
-        <div class="crow"><span>Opacity</span><span id="vWmOp" class="unit">150%</span>
-          <input type="range" id="wmOpacity" min="20" max="300" step="5" value="150"/></div>
-        <div class="crow"><span>Size / scale</span><span id="vWmScale" class="unit">100%</span>
-          <input type="range" id="wmScale" min="10" max="200" step="1" value="100"/></div>
+        <div class="btnrow" style="margin-bottom:6px">
+          <button id="wmScopeAll" class="toggle active" style="flex:1"
+            title="The Watermark button stamps every page at once">All pages</button>
+          <button id="wmScopePage" class="toggle" style="flex:1"
+            title="The Watermark button stamps only the page you’re on — pick pages one by one">Specific pages</button>
+        </div>
+        <div class="btnrow" style="margin-bottom:6px">
+          <button id="wmCenterBtn" class="toggle active" style="flex:1"
+            title="Anchor the watermark to the cropped area instead of the whole sheet">⊹ Center in margins: On</button>
+        </div>
+        <div class="muted" style="margin-bottom:12px" id="wmCenterHint">Sitting in the
+          middle of each page’s crop margins — it follows the guides live. Size is
+          unchanged; use Size / scale for that.</div>
+        <div class="crow"><span>Opacity</span><span id="vWmOp" class="unit">100%</span>
+          <input type="range" id="wmOpacity" min="20" max="300" step="5" value="100"/></div>
+        <div class="crow"><span>Size / scale</span><span id="vWmScale" class="unit">130%</span>
+          <input type="range" id="wmScale" min="10" max="200" step="1" value="130"/></div>
         <div class="crow"><span>Rotate</span><span id="vWmRot" class="unit">0°</span>
           <input type="range" id="wmRotate" min="-180" max="180" step="1" value="0"/></div>
         <div class="crow"><span>X position</span><span id="vWmDx" class="unit">0%</span>
@@ -319,21 +580,79 @@
         <div class="btnrow" style="margin-bottom:8px">
           <button id="wmReset">Reset position &amp; size</button>
         </div>
-        <div class="muted">Overlays the Arivihan watermark on every page (preview &amp; export).
+        <div class="muted">Overlays the Arivihan watermark (preview &amp; export). In
+          All-pages mode the button stamps every page at once; in Specific-pages
+          mode it turns the watermark on/off for just the page you’re viewing.
           Size 100% covers the page; shrink it and drag X/Y to place a stamp.</div>
       </div>
     </div>
 
-    <div class="sec" data-sec="batch">
-      <h3>Apply to batch</h3>
+    <div class="sec" data-sec="pyqs">
+      <h3>PYQs <span id="pyqBadge" class="badge" style="display:none">0</span></h3>
       <div class="secbody">
-        <div class="btnrow">
-          <button id="applyAngleAll">Angle → all pages</button>
-          <button id="applyCropAll">Margins → all pages</button>
-          <button id="applyColorAll">Color → all pages</button>
+        <div class="muted" style="margin-bottom:10px">Theory stays the same for every
+          board — pick a board, medium, subject &amp; chapter to append that chapter's
+          previous-year questions to the end of the current PDF. Appended pages are
+          auto-straightened, auto-margined and editable like any other page.</div>
+        <div class="row"><label>Board</label>
+          <select id="pyqBoard" style="flex:1"><option value="">— board —</option></select></div>
+        <div class="row"><label>Medium</label>
+          <select id="pyqMedium" style="flex:1" disabled><option value="">— medium —</option></select></div>
+        <div class="row"><label>Subject</label>
+          <select id="pyqSubject" style="flex:1" disabled><option value="">— subject —</option></select></div>
+        <div class="row"><label>Chapter</label>
+          <select id="pyqChapter" style="flex:1" disabled><option value="">— chapter —</option></select></div>
+        <div id="pyqInfo" class="muted" style="margin-bottom:10px"></div>
+        <button id="pyqAppendBtn" class="primary" style="width:100%" disabled>➕ Append PYQs to current PDF</button>
+      </div>
+    </div>
+
+    <div class="sec" data-sec="borders">
+      <h3>Borders <span id="bdBadge" class="badge" style="display:none">ON</span></h3>
+      <div class="secbody">
+        <div class="muted" style="margin-bottom:10px">Wraps every page in the
+          branded Arivihan frame — always at its exact designed size. The
+          cropped page fits whole into the frame's window (paper tone fills
+          the slack, nothing is trimmed or stretched) and the preview follows
+          the guides live. Designs cycle page by page; the chapter header is
+          stamped on each one.</div>
+        <div class="btnrow" style="margin-bottom:10px">
+          <button id="bdToggle" class="toggle" style="flex:1">🖼 Borders: Off</button>
         </div>
-        <div class="muted" style="margin-top:8px">Copies this page's settings to every
-          page in every loaded PDF. Handy when all scans share the same margins.</div>
+        <div class="chips" id="bdFitChips" style="margin-bottom:8px">
+          <button class="chip" data-bdfit="width" title="Not-A4 pages: auto-zoom so the width fills the window; vertical space pads (or tucks under the frame). Click again to unfit.">Fit width</button>
+          <button class="chip" data-bdfit="fill" title="Fill the window completely: stretches at most ~15% (barely visible), crops the tiny rest. Click again to unfit.">Fill · slight stretch</button>
+        </div>
+        <div class="crow"><span>Notes zoom</span><span id="vBdZoom" class="unit">100%</span>
+          <input type="range" id="bdZoom" min="50" max="200" step="1" value="100"/></div>
+        <div class="crow"><span>Stretch width</span><span id="vBdStW" class="unit">100%</span>
+          <input type="range" id="bdStW" min="50" max="200" step="1" value="100"/></div>
+        <div class="crow"><span>Stretch height</span><span id="vBdStH" class="unit">100%</span>
+          <input type="range" id="bdStH" min="50" max="200" step="1" value="100"/></div>
+        <div class="btnrow" style="margin-bottom:8px">
+          <button id="bdFitReset" style="flex:1">Reset fit (100%)</button>
+        </div>
+        <div class="btnrow" style="margin-bottom:8px">
+          <button id="bdApplyAll" style="flex:1">Fit → all pages</button>
+          <button id="bdApplyRemaining" style="flex:1">Fit → remaining</button>
+        </div>
+        <div class="muted" style="margin-top:-4px;margin-bottom:10px">Per page:
+          Fit width auto-zooms non-A4 pages to the window's width; Fill covers
+          the whole window with a barely-visible stretch; click an active
+          option to unfit. Zoom &amp; stretch fine-tune on top — the frame
+          never moves, the notes do. Use the buttons to copy this page's fit
+          to every page or from here to the end.</div>
+        <div class="row"><label>Class</label>
+          <select id="bdClass" style="flex:1"></select></div>
+        <div class="row"><label>Ch. no.</label>
+          <input type="text" id="bdNum" placeholder="05" maxlength="4" style="flex:1"/></div>
+        <div class="row"><label>Chapter</label>
+          <input type="text" id="bdName" placeholder="Chapter name" style="flex:1"/></div>
+        <div class="row"><label>Board</label>
+          <select id="bdBoard" style="flex:1"><option value="">— no cover —</option></select></div>
+        <div class="row" id="bdStreamRow"><label>Stream</label>
+          <select id="bdStream" style="flex:1" disabled><option value="">— stream —</option></select></div>
+        <div id="bdInfo" class="muted"></div>
       </div>
     </div>
   </aside>
@@ -343,30 +662,48 @@
 <input type="file" id="sampleInput" accept="image/*,application/pdf" hidden/>
 <div id="toastHost"></div>
 
+<div id="histOverlay" class="hidden">
+  <div id="histModal">
+    <div id="histHead">
+      <h2>🕘 History — saved drafts</h2>
+      <span class="muted" style="font-size:11.5px">Every export is saved here with all its edits</span>
+      <div class="grow"></div>
+      <button id="histSaveBtn" title="Save the current session as a draft without exporting">💾 Save draft</button>
+      <button class="hx" id="histClose" title="Close">✕</button>
+    </div>
+    <div id="histBody"><div class="muted">Loading…</div></div>
+  </div>
+</div>
+
 <script>
 const $ = s => document.querySelector(s);
-const DEF_COLOR = {mode:'none', brightness:1, contrast:1, saturation:1, whiten:0, filter:'none'};
-const AUTO_SCAN = {mode:'none', brightness:1.02, contrast:1.12, saturation:1.55, whiten:0.8, filter:'vivid'};
-// White-paper filter presets. Each sets the whole colour config; `id` is what
-// the Filters tile highlights. Values chosen so the paper cleans to white while
-// the ink stays crisp — from a gentle warm white up to a hard bright scan.
-const FILTERS = [
-  {id:'none',   c:{mode:'none',      whiten:0,    brightness:1,    contrast:1,    saturation:1}},
-  {id:'soft',   c:{mode:'none',      whiten:0.5,  brightness:1.03, contrast:1.06, saturation:1.08}},
-  {id:'white',  c:{mode:'none',      whiten:0.72, brightness:1.02, contrast:1.14, saturation:1.18}},
-  {id:'bright', c:{mode:'none',      whiten:1.0,  brightness:1.05, contrast:1.24, saturation:1.30}},
-  {id:'vivid',  c:{mode:'none',      whiten:0.8,  brightness:1.02, contrast:1.12, saturation:1.55}},
-  {id:'gray',   c:{mode:'grayscale', whiten:0.85, brightness:1.02, contrast:1.25, saturation:1}},
-  {id:'bw',     c:{mode:'bw',        whiten:0.9,  brightness:1.0,  contrast:1.4,  saturation:1}},
-];
+const DEF_COLOR = {mode:'none', brightness:1, contrast:1, saturation:1, whiten:0, deyellow:0, filter:'none'};
+const AUTO_SCAN = {mode:'none', brightness:1.02, contrast:1.12, saturation:1.55, whiten:0.8, deyellow:0.85, filter:'vivid'};
+// Per-page border fit: how the page meets the frame's window.
+const DEF_BFIT = {mode:'width', zoom:1, stretchW:1, stretchH:1};
 const state = {
   job:null, files:[], fi:0, pi:0,   // current file/page index
   before:false,                     // global before/after view toggle
+  magicMode:false,                  // magic remover tool active flag
+  mergePick:false,                  // merge-pages: waiting for a source page pick
+  pendingGaps:[],                   // dragged-but-not-yet-removed bands (visible space)
   palette:null,                     // learned colour palette (global to job)
   paletteVersion:0,                 // bumps on each new sample (cache-bust)
-  // global branding overlay (all pages). scale: 1==covers page; dx/dy: centre
-  // offset as a fraction of page W/H; rotate in degrees.
-  watermark:{on:false, opacity:1.5, scale:1, rotate:0, dx:0, dy:0},
+  // global branding overlay. scale: 1==covers the anchor rect;
+  // dx/dy: centre offset as a fraction of that rect's W/H; rotate in degrees.
+  // centerMargins: anchor to the page's crop margins instead of the whole sheet.
+  // scope: 'all' stamps every page; 'page' stamps only pages with p.wm set.
+  watermark:{on:false, scope:'all', opacity:1, scale:1.3, rotate:0, dx:0, dy:0, centerMargins:true},
+  // branded border frames (all pages): class picks the asset set, board+stream
+  // picks the optional cover page, number+name feed the chapter header.
+  // zoom scales the notes inside the frame's window (1 = fit whole page);
+  // stretchW/stretchH scale each axis on its own.
+  // Global border settings; each page carries its own fit in p.bfit
+  // (mode 'page'|'width'|'fill' + zoom + per-axis stretch).
+  borders:{on:false, cls:'', board:'', stream:'', number:'', name:''},
+  // persistent draft this session is tied to (set after a save or when a
+  // draft is reopened) — re-exports update it instead of duplicating.
+  draftId:null,
   loading:false,
 };
 
@@ -382,8 +719,11 @@ function curPage(){ const f=curFile(); return f? f.pages[state.pi]:null; }
 function pageEdited(f,i){
   const p=f.pages[i], a=f.auto[i];
   if(Math.abs(p.angle-a.angle)>0.001) return true;
+  if((p.rotate||0)!==0) return true;
   for(const k of ['left','top','right','bottom'])
     if(Math.abs(p.crop[k]-a.crop[k])>0.0005) return true;
+  if(p.removals && p.removals.length > 0) return true;
+  if(p.overlays && p.overlays.length > 0) return true;
   if(colorEdited(p)) return true;
   return false;
 }
@@ -391,7 +731,7 @@ function colorEdited(p){
   const c=p.color;
   return c.mode!=='none' || Math.abs(c.brightness-1)>1e-3
     || Math.abs(c.contrast-1)>1e-3 || Math.abs(c.saturation-1)>1e-3
-    || c.whiten>1e-3;
+    || c.whiten>1e-3 || (c.deyellow||0)>1e-3;
 }
 
 // ---- undo / redo history ------------------------------------------------
@@ -405,9 +745,14 @@ const history = { stack: [], idx: -1 };
 function snapshot(){
   return JSON.stringify({
     files: state.files.map(f=>({
-      pages: f.pages.map(p=>({angle:p.angle, crop:{...p.crop}, color:{...p.color}}))
+      pages: f.pages.map(p=>({src:p.src, angle:p.angle, rotate:p.rotate||0, crop:{...p.crop},
+        removals:[...(p.removals||[])],
+        overlays:(p.overlays||[]).map(o=>({...o})),
+        color:{...p.color}, bfit:{...(p.bfit||DEF_BFIT)}, deleted:!!p.deleted,
+        wm:!!p.wm}))
     })),
     watermark: {...state.watermark},
+    borders: {...state.borders},
     palette: state.palette,
     fi: state.fi, pi: state.pi,
   });
@@ -441,21 +786,44 @@ function flushCommit(){ if(commitTimer){ clearTimeout(commitTimer); commitTimer=
 
 function applySnapshot(str){
   const s = JSON.parse(str);
+  // old snapshots carried one global fit on state.borders — migrate it
+  const sb0 = s.borders||{};
+  const legacyBfit = (sb0.fitMode||sb0.zoom!==undefined)
+    ? {mode:sb0.fitMode||'width', zoom:sb0.zoom||1,
+       stretchW:sb0.stretchW||1, stretchH:sb0.stretchH||1}
+    : null;
+  let reordered=false;
   s.files.forEach((sf,fi)=>{
     const f = state.files[fi]; if(!f) return;
+    // put the pages back into the snapshot's order first, so the positional
+    // copy below lands every property on the right page
+    reordered = reorderToMatch(f, sf.pages.map(sp=>sp.src)) || reordered;
     sf.pages.forEach((sp,pi)=>{
       const p = f.pages[pi]; if(!p) return;
-      p.angle = sp.angle; p.crop = {...sp.crop}; p.color = {...sp.color};
+      p.angle = sp.angle; p.rotate = sp.rotate||0;
+      p.crop = {...sp.crop}; p.color = {...sp.color};
+      p.removals = sp.removals ? [...sp.removals] : [];
+      p.overlays = (sp.overlays||[]).map(o=>({...o}));
+      p.bfit = {...DEF_BFIT, ...(sp.bfit||legacyBfit||{})};
+      p.deleted = !!sp.deleted;
+      p.wm = !!sp.wm;
     });
   });
-  state.watermark = {...s.watermark};
+  state.watermark = {scope:'all', ...s.watermark};   // old snapshots lack scope
+  if(s.borders){
+    const sb=s.borders;
+    state.borders={on:!!sb.on, cls:sb.cls||state.borders.cls, board:sb.board||'',
+                   stream:sb.stream||'', number:sb.number||'', name:sb.name||''};
+  }
   state.palette = s.palette;
   state.paletteVersion++;                 // bust thumbnail cache after restore
   state.fi = Math.min(s.fi, state.files.length-1);
   state.pi = Math.min(s.pi, state.files[state.fi].npages-1);
   if(state.before) setBefore(false);
   syncWatermarkBtn();
-  loadPage(); setActiveCard(); refreshAllThumbs();
+  fillBorderBoards(); syncBordersUI();
+  if(reordered) renderRail(); else refreshAllThumbs();
+  loadPage(); setActiveCard(); syncDeletedUI(); drawBorder();
 }
 function undo(){
   flushCommit();
@@ -490,22 +858,26 @@ function ingest(data){
   // If a job already exists we start a fresh one to keep things simple.
   if(state.files.length && data.job!==state.job){ /* new job replaces */ }
   state.job=data.job;
+  state.draftId=null;               // fresh upload = fresh draft on next export
   // store auto (original) settings separately so "Auto" can reset
   data.files.forEach(f=>{
     f.auto=f.pages.map(p=>({angle:p.angle, crop:{...p.crop}}));
-    f.pages=f.pages.map(p=>({angle:p.angle, crop:{...p.crop},
-      color:{...DEF_COLOR}, w:p.w, h:p.h}));
+    // src = the page's index inside the working PDF; it never changes, so
+    // pages can be reordered freely while previews/exports keep pointing at
+    // the right PDF page.
+    f.pages=f.pages.map((p,i)=>({src:i, angle:p.angle, rotate:0, crop:{...p.crop}, removals: p.removals ? [...p.removals] : [],
+      overlays:[],
+      color:{...DEF_COLOR}, bfit:{...DEF_BFIT}, deleted:false, wm:false, w:p.w, h:p.h}));
   });
   state.files=data.files;
   state.fi=0; state.pi=0;
+  reorderOn.clear();
   $('#drop').classList.add('hidden');
   $('#frame').style.display='';
   $('#exportBtn').disabled=false;
   $('#discardBtn').disabled=false;
-  const np=state.files.reduce((s,f)=>s+f.npages,0);
-  $('#jobinfo').textContent=`${state.files.length} PDF(s) · ${np} pages`;
   resetHistory();
-  renderRail(); loadPage();
+  renderRail(); loadPage(); syncDeletedUI(); syncPyqBtn();
 }
 
 // ---- discard current job & start over -----------------------------------
@@ -513,10 +885,13 @@ function ingest(data){
 // watermark and colour sample all reset too, so the next PDF opens clean.
 function discardJob(){
   state.job=null; state.files=[]; state.fi=0; state.pi=0;
+  state.draftId=null;
   state.before=false; state.palette=null; state.paletteVersion++;
-  state.watermark={on:false, opacity:1.5, scale:1, rotate:0, dx:0, dy:0};
+  state.watermark={on:false, scope:'all', opacity:1, scale:1.3, rotate:0, dx:0, dy:0, centerMargins:true};
+  state.borders={on:false, cls:state.borders.cls, board:'', stream:'', number:'', name:''};
   for(const k in cards) delete cards[k];
-  $('#railBody').innerHTML='<div class="muted" style="padding:8px">No files yet.</div>';
+  reorderOn.clear();
+  $('#railBody').innerHTML='<div class="emptyRail"><div class="er-ico">📂</div><div class="er-title">No files yet.</div><div class="muted">Add PDF files to get started.</div></div>';
   $('#frame').style.display='none';
   $('#drop').classList.remove('hidden');
   $('#exportBtn').disabled=true;
@@ -524,10 +899,14 @@ function discardJob(){
   $('#jobinfo').textContent='Straighten & crop scanned notes — fully local';
   $('#pageLabel').textContent='—';
   $('#editState').textContent='';
+  $('#frame').classList.remove('deleted');
   $('#paletteBox').style.display='none';
   $('#sampleBtn').textContent='🎨 Upload / drop sample page…';
   setBefore(false);
   syncWatermarkBtn();
+  fillBorderBoards(); syncBordersUI();
+  syncDeletedUI();
+  syncPyqBtn();
   history.stack=[]; history.idx=-1; updateHistBtns();
 }
 $('#discardBtn').onclick=()=>{
@@ -539,13 +918,60 @@ $('#discardBtn').onclick=()=>{
 
 // ---- left rail (live thumbnails) ----------------------------------------
 const cards = {};                          // "fi:pi" -> {card, img}
+const reorderOn = new Set();               // file indices with reorder mode on
+// Swap a page with its neighbour (d = -1 up / +1 down). Pages carry their PDF
+// page index in p.src, so only the display/export ORDER changes — every
+// preview URL and edit stays glued to its page.
+function movePage(fi,i,d){
+  const f=state.files[fi], j=i+d;
+  if(!f||j<0||j>=f.pages.length) return;
+  [f.pages[i],f.pages[j]]=[f.pages[j],f.pages[i]];
+  [f.auto[i],f.auto[j]]=[f.auto[j],f.auto[i]];
+  // merged-page overlays reference their source by position — follow the swap
+  state.files.forEach(file=>file.pages.forEach(p=>{
+    (p.overlays||[]).forEach(o=>{
+      if(o.sf!==fi) return;
+      if(o.sp===i) o.sp=j; else if(o.sp===j) o.sp=i;
+    });
+  }));
+  if(state.fi===fi){
+    if(state.pi===i) state.pi=j;
+    else if(state.pi===j) state.pi=i;
+  }
+  renderRail(); setActiveCard(); loadPage();
+  commit();
+}
+// Restore a saved page order (list of src indices) after undo/redo or when a
+// draft reopens. Returns true if the order actually changed.
+function reorderToMatch(f, order){
+  if(!order||order.length!==f.pages.length) return false;
+  if(order.some(s=>s===undefined||s===null)) return false;
+  const cur=f.pages.map(p=>p.src);
+  if(order.every((s,i)=>s===cur[i])) return false;
+  const idx=new Map(cur.map((s,i)=>[s,i]));
+  const np=[], na=[];
+  for(const s of order){
+    const i=idx.get(s); if(i===undefined) return false;
+    np.push(f.pages[i]); na.push(f.auto[i]);
+  }
+  f.pages=np; f.auto=na;
+  return true;
+}
 function thumbDim(){                        // render size (sharper than display)
   return Math.min(420, Math.round(parseInt($('#zoom').value) * 1.7));
 }
+function removalsQuery(removals){
+  if(!removals || !removals.length) return '';
+  const valid = removals.filter(r => r && typeof r.top==='number' && typeof r.bottom==='number' && !isNaN(r.top) && !isNaN(r.bottom));
+  if(!valid.length) return '';
+  const str = valid.map(r => `${r.top.toFixed(4)},${r.bottom.toFixed(4)}`).join('|');
+  return `&rms=${encodeURIComponent(str)}`;
+}
 function thumbUrl(fi,pi){
   const f=state.files[fi], p=f.pages[pi], c=p.crop;
-  return `/api/preview?job=${state.job}&fid=${f.fid}&page=${pi}&angle=${p.angle}`
-    +colorQuery(p.color)+wmQuery()
+  return `/api/preview?job=${state.job}&fid=${f.fid}&page=${p.src??pi}&angle=${p.angle}`
+    +`&rot=${p.rotate||0}`
+    +colorQuery(p.color)+wmQuery(p)+removalsQuery(p.removals)+ovQuery(p)
     +`&crl=${c.left}&crt=${c.top}&crr=${c.right}&crb=${c.bottom}`
     +`&maxdim=${thumbDim()}&pv=${state.paletteVersion}`;
 }
@@ -554,22 +980,55 @@ function renderRail(){
   for(const k in cards) delete cards[k];
   state.files.forEach((f,fi)=>{
     const g=document.createElement('div');g.className='filegrp';
-    const nm=document.createElement('div');nm.className='filename';nm.textContent=f.name;
+    if(reorderOn.has(fi)) g.classList.add('reordering');
+    const nm=document.createElement('div');nm.className='filename';
+    const nmTxt=document.createElement('span');nmTxt.className='fname';
+    nmTxt.textContent=f.name;
+    const rb=document.createElement('button');
+    rb.className='reorderBtn'+(reorderOn.has(fi)?' active':'');
+    rb.textContent='⇅';
+    rb.title='Reorder pages — show up/down arrows on each page';
+    rb.onclick=()=>{
+      const on=!reorderOn.has(fi);
+      if(on) reorderOn.add(fi); else reorderOn.delete(fi);
+      g.classList.toggle('reordering',on);
+      rb.classList.toggle('active',on);
+    };
+    nm.appendChild(nmTxt); nm.appendChild(rb);
     g.appendChild(nm);
     const grid=document.createElement('div');grid.className='cards';
     f.pages.forEach((p,pi)=>{
       const card=document.createElement('div');
       card.className='pcard'+((fi===state.fi&&pi===state.pi)?' active':'')
-        +(pageEdited(f,pi)?' edited':'');
+        +(pageEdited(f,pi)?' edited':'')+(p.deleted?' deleted':'');
       const img=document.createElement('img');
       img.loading='lazy'; img.alt=`Page ${pi+1}`; img.src=thumbUrl(fi,pi);
       const box=document.createElement('div');box.className='pthumb';box.appendChild(img);
+      const del=document.createElement('button');
+      del.className='pdel';
+      del.textContent=p.deleted?'↩':'🗑';
+      del.title=p.deleted?'Restore this page':'Delete this page (kept here, not exported)';
+      del.onclick=ev=>{ ev.stopPropagation(); setPageDeleted(fi,pi,!state.files[fi].pages[pi].deleted); };
+      box.appendChild(del);
+      const mv=document.createElement('div');mv.className='pmove';
+      const mkArrow=(sym,d,label)=>{
+        const b=document.createElement('button');
+        b.textContent=sym; b.title=label;
+        b.disabled=(pi+d<0||pi+d>=f.pages.length);
+        b.onclick=ev=>{ ev.stopPropagation(); movePage(fi,pi,d); };
+        mv.appendChild(b);
+      };
+      mkArrow('▲',-1,'Move this page up');
+      mkArrow('▼',1,'Move this page down');
+      box.appendChild(mv);
       const cap=document.createElement('div');cap.className='pcap';
       cap.innerHTML=`<span class="dot"></span><span>Page ${pi+1}</span>`;
       card.appendChild(box);card.appendChild(cap);
-      card.onclick=()=>{ state.fi=fi; state.pi=pi; setActiveCard(); loadPage(); };
+      card.onclick=()=>{
+        if(state.mergePick){ pullPageContent(fi,pi); return; }
+        state.fi=fi; state.pi=pi; setActiveCard(); loadPage(); };
       grid.appendChild(card);
-      cards[`${fi}:${pi}`]={card,img};
+      cards[`${fi}:${pi}`]={card,img,del};
     });
     g.appendChild(grid);body.appendChild(g);
   });
@@ -598,29 +1057,99 @@ function refreshAllThumbs(){
   state.files.forEach((f,fi)=>f.pages.forEach((p,pi)=>refreshThumb(fi,pi)));
 }
 
+// ---- page delete / restore ----------------------------------------------
+// A deleted page is never removed from the job: it stays put in the rail,
+// greyed out and stamped DELETED, so it can be brought back at any time. The
+// only thing deletion changes is that the export skips it.
+function deletedCount(){
+  return state.files.reduce((s,f)=>s+f.pages.filter(p=>p.deleted).length,0);
+}
+function syncJobInfo(){
+  if(!state.files.length){
+    $('#jobinfo').textContent='Straighten & crop scanned notes — fully local';
+    return;
+  }
+  const np=state.files.reduce((s,f)=>s+f.npages,0), d=deletedCount();
+  $('#jobinfo').textContent=`${state.files.length} PDF(s) · ${np} pages`
+    +(d ? ` · ${d} deleted` : '');
+}
+function syncEditState(){
+  const p=curPage();
+  if(!p){ $('#editState').textContent=''; return; }
+  if(state.before){ $('#editState').textContent='showing original'; return; }
+  $('#editState').textContent = p.deleted ? '🗑 deleted — not exported'
+    : (pageEdited(curFile(),state.pi) ? 'edited' : 'auto');
+}
+function syncDeletedUI(){
+  const p=curPage(), del=!!(p&&p.deleted), btn=$('#delPageBtn');
+  btn.disabled=!p;
+  btn.textContent = del ? '↩ Restore page' : '🗑 Delete page';
+  btn.classList.toggle('restore',del);
+  btn.classList.toggle('danger',!del);
+  btn.title = del ? 'Put this page back into the export'
+    : 'Exclude this page from the export (it stays here, greyed out)';
+  $('#frame').classList.toggle('deleted',del);
+  syncEditState();
+  syncJobInfo();
+  const anyKept=state.files.some(f=>f.pages.some(pg=>!pg.deleted));
+  $('#exportBtn').disabled = !state.files.length || !anyKept;
+}
+function setPageDeleted(fi,pi,del){
+  const f=state.files[fi], p=f&&f.pages[pi];
+  if(!p || !!p.deleted===del) return;
+  p.deleted=del;
+  const e=cards[`${fi}:${pi}`];
+  if(e){
+    e.card.classList.toggle('deleted',del);
+    e.del.textContent = del ? '↩' : '🗑';
+    e.del.title = del ? 'Restore this page'
+      : 'Delete this page (kept here, not exported)';
+  }
+  syncDeletedUI();
+  drawBorder();          // template cycling skips deleted pages
+  toast(del ? `Page ${pi+1} of ${f.name} deleted — it won’t be exported`
+            : `Page ${pi+1} of ${f.name} restored`);
+  commit();
+}
+$('#delPageBtn').onclick=()=>{
+  const p=curPage(); if(!p) return;
+  setPageDeleted(state.fi,state.pi,!p.deleted);
+};
+
 // ---- preview ------------------------------------------------------------
 let previewTimer=null;
 function loadPage(){
   const f=curFile(), p=curPage(); if(!p) return;
+  state.pendingGaps = [];           // selections don't carry across pages
   $('#pageLabel').textContent=`${f.name} — page ${state.pi+1} / ${f.npages}`;
   syncControls();
+  syncWatermarkBtn();      // the per-page stamp button follows the current page
+  syncBordersUI();
+  syncDeletedUI();
+  drawOverlays();
   refreshPreview();
 }
 function colorQuery(c){
   return `&cmode=${c.mode}&cbright=${c.brightness}&ccontrast=${c.contrast}`
-    +`&csat=${c.saturation}&cwhiten=${c.whiten}`;
+    +`&csat=${c.saturation}&cwhiten=${c.whiten}&cdeyellow=${c.deyellow||0}`;
 }
-function wmQuery(){
+// Watermark params for one page. The crop insets ride along separately (w*) so
+// the server can anchor the overlay to the margins even on the main preview,
+// which renders the page *uncropped* (the guides are drawn over it).
+function wmQuery(p){
   const w=state.watermark;
-  return w.on ? `&wm=1&wmop=${w.opacity}&wmscale=${w.scale}&wmrot=${w.rotate}`
-    +`&wmdx=${w.dx}&wmdy=${w.dy}` : '';
+  if(!wmEffOn(p)) return '';
+  const c=(p&&p.crop)||{left:0,top:0,right:0,bottom:0};
+  return `&wm=1&wmop=${w.opacity}&wmscale=${w.scale}&wmrot=${w.rotate}`
+    +`&wmdx=${w.dx}&wmdy=${w.dy}&wmcm=${w.centerMargins?1:0}`
+    +`&wcl=${c.left}&wct=${c.top}&wcr=${c.right}&wcb=${c.bottom}`;
 }
 function refreshPreview(){
   const f=curFile(), p=curPage(); if(!p) return;
-  const base=`/api/preview?job=${state.job}&fid=${f.fid}&page=${state.pi}`;
+  const base=`/api/preview?job=${state.job}&fid=${f.fid}&page=${p.src??state.pi}`;
   const url = state.before
     ? `${base}&angle=0`                          // raw original, no colour
-    : `${base}&angle=${p.angle}${colorQuery(p.color)}${wmQuery()}&pv=${state.paletteVersion}`;
+    : `${base}&angle=${p.angle}&rot=${p.rotate||0}${colorQuery(p.color)}${wmQuery(p)}${removalsQuery(p.removals)}&pv=${state.paletteVersion}`;
   const img=$('#pageImg');
   img.onload=()=>drawCrop();
   img.src=url;
@@ -630,9 +1159,488 @@ function refreshPreviewDebounced(){
   previewTimer=setTimeout(refreshPreview,140);
 }
 
-// ---- crop overlay -------------------------------------------------------
+// ---- crop overlay & magic remover ---------------------------------------
+function drawRemovals(){
+  const p = curPage();
+  const overlay = $('#removalOverlay');
+  if(!overlay) return;
+  overlay.innerHTML = '';
+  if(!p) return;
+  const count = (p.removals || []).length;
+  const badge = $('#removerBadge');
+  if(badge){
+    badge.textContent = count;
+    badge.style.display = count > 0 ? '' : 'none';
+  }
+  syncRemovalList();
+  // Applied gaps are already collapsed in the live preview, so they get no
+  // band. Only pending selections are drawn, each with a Remove button that
+  // applies the removal in real time (and a × to discard the selection).
+  if(state.before || !state.magicMode || !state.pendingGaps.length) return;
+
+  state.pendingGaps.forEach((r, idx)=>{
+    if(typeof r.top!=='number' || typeof r.bottom!=='number') return;
+    const band = document.createElement('div');
+    band.className = 'removal-band';
+    band.style.top = (r.top * 100).toFixed(2) + '%';
+    band.style.height = ((r.bottom - r.top) * 100).toFixed(2) + '%';
+    band.style.pointerEvents = 'auto';
+
+    const label = document.createElement('span');
+    label.className = 'rem-label';
+    label.textContent = `Gap (${((r.bottom-r.top)*100).toFixed(1)}%)`;
+
+    const btns = document.createElement('span');
+    btns.className = 'rem-btns';
+
+    const apply = document.createElement('button');
+    apply.className = 'rem-apply';
+    apply.textContent = 'Remove';
+    apply.title = 'Remove this blank gap now';
+    apply.addEventListener('pointerdown', (ev) => { ev.stopPropagation(); ev.preventDefault(); });
+    apply.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      ev.preventDefault();
+      applyPendingGap(idx);
+    });
+
+    const del = document.createElement('button');
+    del.className = 'rem-del';
+    del.textContent = '×';
+    del.title = 'Discard this selection';
+    del.addEventListener('pointerdown', (ev) => { ev.stopPropagation(); ev.preventDefault(); });
+    del.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      ev.preventDefault();
+      state.pendingGaps.splice(idx, 1);
+      drawRemovals();
+    });
+
+    btns.appendChild(apply);
+    btns.appendChild(del);
+    band.appendChild(label);
+    band.appendChild(btns);
+    overlay.appendChild(band);
+  });
+}
+
+// Map a y-fraction on the *visible* preview (removals already collapsed) back
+// to the uncropped-deskewed original space that removal fractions live in:
+// add back the height of every applied gap that sits above the point.
+// apply_removals preserves page height (bottom fill), so fractions compare 1:1.
+function visToOrig(y, removals){
+  const sorted = [...(removals || [])].sort((a, b) => a.top - b.top);
+  let shift = 0;
+  for(const g of sorted){
+    if(g.top - shift <= y) shift += (g.bottom - g.top);
+    else break;
+  }
+  return y + shift;
+}
+
+function applyPendingGap(idx){
+  const p = curPage(); if(!p) return;
+  const g = state.pendingGaps[idx]; if(!g) return;
+  state.pendingGaps.splice(idx, 1);
+  const top = visToOrig(g.top, p.removals);
+  const bot = visToOrig(g.bottom, p.removals);
+  if(!p.removals) p.removals = [];
+  p.removals.push({top: parseFloat(top.toFixed(4)), bottom: parseFloat(bot.toFixed(4))});
+  // Content below the removed band shifts up in the preview; keep any other
+  // pending bands aligned with it.
+  const h = g.bottom - g.top;
+  state.pendingGaps.forEach(o => {
+    if(o.top >= g.bottom){ o.top -= h; o.bottom -= h; }
+  });
+  drawRemovals();
+  refreshThumb(state.fi, state.pi);
+  refreshPreview();
+  commit();
+  toast(`Removed blank gap (${(h*100).toFixed(1)}% of page)`);
+}
+
+function syncRemovalList(){
+  const list = $('#removalList');
+  if(!list) return;
+  list.innerHTML = '';
+  const p = curPage();
+  if(!p || !p.removals || !p.removals.length){
+    list.innerHTML = '<div class="muted">No blank gaps removed yet.</div>';
+    return;
+  }
+  p.removals.forEach((r, idx)=>{
+    const item = document.createElement('div');
+    item.className = 'rem-item';
+    item.innerHTML = `<span>Blank Gap ${idx+1}: ${(r.top*100).toFixed(1)}% – ${(r.bottom*100).toFixed(1)}%</span>
+      <button class="rem-del-btn" title="Delete gap">✕</button>`;
+    item.querySelector('.rem-del-btn').onclick = ()=>{
+      p.removals.splice(idx, 1);
+      // The preview layout changes when a gap is restored, so any pending
+      // selections would be misaligned — drop them.
+      state.pendingGaps = [];
+      drawRemovals();
+      refreshThumb(state.fi, state.pi);
+      refreshPreview();
+      commit();
+    };
+    list.appendChild(item);
+  });
+}
+
+function setMagicMode(on){
+  state.magicMode = on;
+  const btn = $('#magicBtn');
+  if(btn){
+    btn.classList.toggle('magic-active', on);
+    btn.textContent = on ? '🪄 Select Mode Active' : '🪄 Select Blank Gap';
+  }
+  $('#frame').classList.toggle('magic-mode', on);
+  if(!on) state.pendingGaps = [];   // leaving select mode discards unapplied selections
+  drawRemovals();
+}
+
+$('#magicBtn').onclick = () => setMagicMode(!state.magicMode);
+
+(function initMagicDrag(){
+  let dragging = false;
+  let startY = 0;
+
+  $('#frame').addEventListener('pointerdown', (ev) => {
+    // Always let rem-del buttons (delete gap) receive clicks, regardless of magic mode
+    if(ev.target.closest && (ev.target.closest('.rem-del') || ev.target.closest('.rem-del-btn') || ev.target.closest('.removal-band'))) return;
+    if(!state.magicMode || state.before || ev.target.closest('.guide')) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    dragging = true;
+    const rect = $('#frame').getBoundingClientRect();
+    startY = (ev.clientY - rect.top) / rect.height;
+    startY = Math.max(0, Math.min(1, startY));
+
+    const dragBand = $('#dragBand');
+    dragBand.style.top = (startY * 100) + '%';
+    dragBand.style.height = '0%';
+    dragBand.style.display = 'block';
+
+    const move = (e) => {
+      if(!dragging) return;
+      const curY = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+      const top = Math.min(startY, curY);
+      const bot = Math.max(startY, curY);
+      dragBand.style.top = (top * 100) + '%';
+      dragBand.style.height = ((bot - top) * 100) + '%';
+    };
+
+    const up = (e) => {
+      if(!dragging) return;
+      dragging = false;
+      document.removeEventListener('pointermove', move);
+      document.removeEventListener('pointerup', up);
+      dragBand.style.display = 'none';
+
+      const curY = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+      let top = Math.min(startY, curY);
+      let bot = Math.max(startY, curY);
+
+      if(bot - top >= 0.005){
+        const p = curPage();
+        if(p){
+          state.pendingGaps.push({top: parseFloat(top.toFixed(4)), bottom: parseFloat(bot.toFixed(4))});
+          drawRemovals();
+        }
+      }
+    };
+
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+  });
+})();
+
+$('#clearRemovalsBtn').onclick = () => {
+  const p = curPage();
+  state.pendingGaps = [];
+  if(p && p.removals && p.removals.length){
+    p.removals = [];
+    drawRemovals();
+    refreshThumb(state.fi, state.pi);
+    refreshPreview();
+    commit();
+    toast('Cleared all removed gaps on this page');
+  }
+};
+
+$('#applyRemovalsAll').onclick = () => {
+  const p = curPage();
+  if(!p) return;
+  const rms = [...(p.removals || [])];
+  let n = 0;
+  state.files.forEach(f => f.pages.forEach(pg => { pg.removals = [...rms]; n++; }));
+  toast(`Applied ${rms.length} gap removal(s) to all ${n} pages`);
+  refreshAllThumbs();
+  refreshPreview();
+  commit();
+};
+
+$('#autoGapsBtn').onclick = async () => {
+  const f = curFile(), p = curPage();
+  if(!p) { toast('No page loaded'); return; }
+  if(!state.job) { toast('Upload a PDF first'); return; }
+  const t = toast('<span class="spinner"></span> Auto-detecting blank gaps…', 0);
+  try {
+    const cropForDetect = {
+      left: parseFloat(p.crop.left) || 0,
+      top: parseFloat(p.crop.top) || 0,
+      right: parseFloat(p.crop.right) || 0,
+      bottom: parseFloat(p.crop.bottom) || 0
+    };
+    const res = await fetch('/api/detect_gaps', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        job: state.job,
+        fid: f.fid,
+        page: p.src??state.pi,
+        angle: parseFloat(p.angle) || 0,
+        rotate: p.rotate || 0,
+        crop: cropForDetect
+      })
+    });
+    let data;
+    try {
+      data = await res.json();
+    } catch(je) {
+      throw new Error(`Server error (status ${res.status})`);
+    }
+    if(!res.ok) throw new Error(data.error || `Server error (${res.status})`);
+    if(!data.gaps || !data.gaps.length){
+      toast('No blank gaps detected on this page');
+    } else {
+      if(!p.removals) p.removals = [];
+      let count = 0;
+      data.gaps.forEach(g => {
+        if(typeof g.top !== 'number' || typeof g.bottom !== 'number') return;
+        if(isNaN(g.top) || isNaN(g.bottom)) return;
+        const exists = p.removals.some(r => Math.abs(r.top - g.top) < 0.01 && Math.abs(r.bottom - g.bottom) < 0.01);
+        if(!exists){
+          p.removals.push({top: parseFloat(g.top.toFixed(4)), bottom: parseFloat(g.bottom.toFixed(4))});
+          count++;
+        }
+      });
+      if(count > 0) {
+        // Layout shifts as the detected gaps collapse — drop stale selections.
+        state.pendingGaps = [];
+        drawRemovals();
+        refreshThumb(state.fi, state.pi);
+        refreshPreview();
+        commit();
+        toast(`Auto-detected ${count} blank gap(s)`);
+      } else {
+        toast('All detected gaps already added');
+      }
+    }
+  } catch(e) {
+    toast('Auto-detect error: ' + e.message);
+  } finally {
+    t.remove();
+  }
+};
+
+// ---- merge pages (pull another page's content onto this one) --------------
+// An overlay references its source page by file+page index ({sf, sp}) and
+// carries only its placement: x/y (top-left corner) and w (width), all as
+// fractions of the destination's uncropped deskewed page — the same space the
+// crop guides live in. The source page's angle/rotation/crop/gaps/colour are
+// resolved live at render time, so refining the source page refines the pulled
+// content too. Export & thumbnails composite server-side with identical maths.
+function ovResolve(o){
+  const sf=state.files[o.sf]; if(!sf) return null;
+  const sp=sf.pages[o.sp]; if(!sp) return null;
+  return {fid:sf.fid, page:sp.src??o.sp, angle:sp.angle, rotate:sp.rotate||0,
+    crop:{...sp.crop}, removals:[...(sp.removals||[])], color:{...sp.color},
+    x:o.x, y:o.y, w:o.w};
+}
+function ovQuery(p){
+  const list=(p.overlays||[]).map(ovResolve).filter(Boolean);
+  if(!list.length) return '';
+  return '&ov='+encodeURIComponent(JSON.stringify(list));
+}
+function ovImgUrl(o){
+  const r=ovResolve(o); if(!r) return '';
+  const c=r.crop;
+  return `/api/preview?job=${state.job}&fid=${r.fid}&page=${r.page}`
+    +`&angle=${r.angle}&rot=${r.rotate}`
+    +colorQuery(r.color)+removalsQuery(r.removals)
+    +`&crl=${c.left}&crt=${c.top}&crr=${c.right}&crb=${c.bottom}`
+    +`&maxdim=1200&pv=${state.paletteVersion}`;
+}
+// Rotated quarter-turn pages swap their stored raster dimensions.
+function pageDims(p){
+  const swap=Math.round((p.rotate||0)/90)%2!==0;
+  return swap ? {w:p.h, h:p.w} : {w:p.w, h:p.h};
+}
+// Overlay height as a fraction of the destination page (from source geometry).
+function ovHeightFrac(o, dest){
+  const sf=state.files[o.sf], sp=sf&&sf.pages[o.sp]; if(!sp) return 0;
+  const sd=pageDims(sp), dd=pageDims(dest), c=sp.crop;
+  const kw=Math.max(0.02,1-c.left-c.right), kh=Math.max(0.02,1-c.top-c.bottom);
+  return o.w*(dd.w/dd.h)*((kh*sd.h)/(kw*sd.w));
+}
+let ovDragging=false;
+function drawOverlays(){
+  const layer=$('#ovLayer'); if(!layer||ovDragging) return;
+  layer.innerHTML='';
+  const p=curPage();
+  const list=(p&&p.overlays)||[];
+  const badge=$('#ovBadge');
+  badge.textContent=list.length;
+  badge.style.display=list.length?'':'none';
+  syncOvList();
+  if(!p) return;
+  list.forEach((o,idx)=>{
+    const it=document.createElement('div');
+    it.className='ov-item';
+    it.style.left=(o.x*100)+'%';
+    it.style.top=(o.y*100)+'%';
+    it.style.width=(o.w*100)+'%';
+    const img=document.createElement('img');
+    img.draggable=false; img.alt=''; img.src=ovImgUrl(o);
+    const tools=document.createElement('div'); tools.className='ov-tools';
+    const tag=document.createElement('span'); tag.className='ov-tag';
+    const sf=state.files[o.sf];
+    tag.textContent=`from page ${o.sp+1}`
+      +(state.files.length>1&&sf?` · ${sf.name}`:'');
+    const del=document.createElement('button'); del.className='ov-del';
+    del.textContent='✕'; del.title='Remove this pulled content';
+    del.addEventListener('pointerdown',ev=>ev.stopPropagation());
+    del.onclick=ev=>{ ev.stopPropagation(); removeOverlay(idx); };
+    tools.appendChild(tag); tools.appendChild(del);
+    const hd=document.createElement('div'); hd.className='ov-handle';
+    hd.title='Drag to resize';
+    it.appendChild(img); it.appendChild(tools); it.appendChild(hd);
+    // drag to move
+    it.addEventListener('pointerdown',ev=>{
+      if(ev.target===hd||state.magicMode||state.before) return;
+      ev.preventDefault(); ev.stopPropagation();
+      ovDragging=true; it.classList.add('dragging'); it.style.cursor='grabbing';
+      const fr=$('#pageImg').getBoundingClientRect();
+      const sx=ev.clientX, sy=ev.clientY, ox=o.x, oy=o.y;
+      const move=e=>{
+        o.x=Math.min(1.2,Math.max(-0.2, ox+(e.clientX-sx)/fr.width));
+        o.y=Math.min(1.2,Math.max(-0.2, oy+(e.clientY-sy)/fr.height));
+        it.style.left=(o.x*100)+'%'; it.style.top=(o.y*100)+'%';
+      };
+      const up=()=>{
+        document.removeEventListener('pointermove',move);
+        document.removeEventListener('pointerup',up);
+        ovDragging=false; it.classList.remove('dragging'); it.style.cursor='';
+        refreshThumb(state.fi,state.pi); commit();
+      };
+      document.addEventListener('pointermove',move);
+      document.addEventListener('pointerup',up);
+    });
+    // corner handle: resize (width; height follows the image's aspect)
+    hd.addEventListener('pointerdown',ev=>{
+      ev.preventDefault(); ev.stopPropagation();
+      ovDragging=true; it.classList.add('dragging');
+      const fr=$('#pageImg').getBoundingClientRect();
+      const sx=ev.clientX, ow=o.w;
+      const move=e=>{
+        o.w=Math.min(1.5,Math.max(0.04, ow+(e.clientX-sx)/fr.width));
+        it.style.width=(o.w*100)+'%';
+      };
+      const up=()=>{
+        document.removeEventListener('pointermove',move);
+        document.removeEventListener('pointerup',up);
+        ovDragging=false; it.classList.remove('dragging');
+        refreshThumb(state.fi,state.pi); commit();
+      };
+      document.addEventListener('pointermove',move);
+      document.addEventListener('pointerup',up);
+    });
+    layer.appendChild(it);
+  });
+}
+function syncOvList(){
+  const list=$('#ovList'); if(!list) return;
+  list.innerHTML='';
+  const p=curPage();
+  if(!p||!(p.overlays||[]).length){
+    list.innerHTML='<div class="muted">Nothing pulled onto this page yet.</div>';
+    return;
+  }
+  p.overlays.forEach((o,idx)=>{
+    const f=state.files[o.sf];
+    const item=document.createElement('div');
+    item.className='rem-item';
+    item.innerHTML=`<span>From page ${o.sp+1}`
+      +(state.files.length>1&&f?` · ${escapeHtml(f.name)}`:'')
+      +`</span><button class="rem-del-btn" title="Remove pulled content">✕</button>`;
+    item.querySelector('.rem-del-btn').onclick=()=>removeOverlay(idx);
+    list.appendChild(item);
+  });
+}
+function removeOverlay(idx){
+  const p=curPage(); if(!p||!p.overlays) return;
+  p.overlays.splice(idx,1);
+  drawOverlays();
+  refreshThumb(state.fi,state.pi);
+  commit();
+  toast('Pulled content removed — restore the source page from its thumbnail if needed');
+}
+function setMergePick(on){
+  state.mergePick=on;
+  const b=$('#mergePickBtn');
+  b.classList.toggle('pick-active',on);
+  b.textContent=on ? '👈 Click a page in the left rail… (Esc cancels)'
+                   : '📥 Pull content from another page…';
+  document.body.classList.toggle('merge-pick',on);
+}
+$('#mergePickBtn').onclick=()=>{
+  if(!state.files.length){ toast('Load a PDF first'); return; }
+  setMergePick(!state.mergePick);
+  if(state.mergePick)
+    toast('Click a page thumbnail on the left to pull its content onto this page');
+};
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'&&state.mergePick) setMergePick(false);
+});
+function pullPageContent(sfi,spi){
+  setMergePick(false);
+  const dest=curPage(); if(!dest) return;
+  if(sfi===state.fi&&spi===state.pi){
+    toast('That’s the page you’re on — pick a different page'); return; }
+  const sp=state.files[sfi].pages[spi];
+  const sc=sp.crop, dc=dest.crop;
+  const sd=pageDims(sp), dd=pageDims(dest);
+  // natural size: the source's cropped content at 1:1 page scale
+  const skw=Math.max(0.02,1-sc.left-sc.right);
+  const w=Math.min(1, skw*sd.w/dd.w);
+  // drop it under the destination's content (its crop-box bottom), stacking
+  // below anything already pulled here
+  let y=1-dc.bottom+0.005;
+  (dest.overlays||[]).forEach(o=>{ y=Math.max(y, o.y+ovHeightFrac(o,dest)+0.005); });
+  const o={sf:sfi, sp:spi, x:Math.min(0.9,dc.left), y:Math.min(1.05,y), w};
+  if(!dest.overlays) dest.overlays=[];
+  dest.overlays.push(o);
+  let msg=`Pulled page ${spi+1}’s content here — drag it into place, resize by the corner`;
+  if($('#mergeDelSrc').checked && !sp.deleted){
+    sp.deleted=true;
+    const e=cards[`${sfi}:${spi}`];
+    if(e){
+      e.card.classList.add('deleted');
+      e.del.textContent='↩'; e.del.title='Restore this page';
+    }
+    msg+='; source page deleted (its thumbnail restores it)';
+  }
+  drawOverlays(); syncDeletedUI(); drawBorder();
+  refreshThumb(state.fi,state.pi);
+  commit();
+  toast(msg,4500);
+}
+
 function drawCrop(){
   const p=curPage(); if(!p) return;
+  drawRemovals();
+  drawBorder();
   if(state.before){ $('#editState').textContent='showing original'; return; }
   const img=$('#pageImg');
   const W=img.clientWidth, H=img.clientHeight;
@@ -649,12 +1657,13 @@ function drawCrop(){
   sb.style.cssText=`bottom:0;left:0;right:0;height:${B}%`;
   sl.style.cssText=`top:${T}%;bottom:${B}%;left:0;width:${L}%`;
   sr.style.cssText=`top:${T}%;bottom:${B}%;right:0;width:${R}%`;
-  $('#editState').textContent = pageEdited(curFile(),state.pi) ? 'edited' : 'auto';
+  syncEditState();
 }
 
 function startDrag(which){
   return ev=>{
     ev.preventDefault();
+    borderGuideDrag=true;      // freeze the border layout while dragging
     const frame=$('#frame').getBoundingClientRect();
     const move=e=>{
       const c=curPage().crop;
@@ -671,11 +1680,12 @@ function startDrag(which){
         let v=(frame.right-e.clientX)/frame.width;
         c.right=Math.min(Math.max(v,0), 1-c.left-0.02);
       }
-      drawCrop(); syncCropInputs();
+      drawCrop(); syncCropInputs(); cropChanged();
     };
     const up=()=>{ document.removeEventListener('pointermove',move);
       document.removeEventListener('pointerup',up); refreshThumb(state.fi,state.pi);
-      commit(); };
+      borderGuideDrag=false; drawBorder();   // snap page to the new fit
+      cropChanged(); commit(); };
     document.addEventListener('pointermove',move);
     document.addEventListener('pointerup',up);
   };
@@ -686,40 +1696,21 @@ $('#gLeft').addEventListener('pointerdown',startDrag('left'));
 $('#gRight').addEventListener('pointerdown',startDrag('right'));
 
 // ---- controls sync ------------------------------------------------------
-function syncControls(){ syncAngle(); syncCropInputs(); syncColor(); }
+function syncControls(){ syncAngle(); syncRotate(); syncCropInputs(); syncColor(); }
 function syncColor(){
   const c=curPage().color;
   if(['none','grayscale','bw'].includes(c.mode)) $('#cMode').value=c.mode;
+  $('#cDeyellow').value=Math.round((c.deyellow||0)*100);
+  $('#vDeyellow').textContent=Math.round((c.deyellow||0)*100)+'%';
   $('#cWhiten').value=Math.round(c.whiten*100);
   $('#vWhiten').textContent=Math.round(c.whiten*100)+'%';
   $('#cBright').value=c.brightness;   $('#vBright').textContent=c.brightness.toFixed(2);
   $('#cContrast').value=c.contrast;   $('#vContrast').textContent=c.contrast.toFixed(2);
   $('#cSat').value=c.saturation;      $('#vSat').textContent=c.saturation.toFixed(2);
-  syncFilterChips();
 }
-// ---- filters (white-paper presets) --------------------------------------
-function syncFilterChips(){
-  const p=curPage();
-  const cur = p ? (p.color.mode==='sample' ? null : p.color.filter) : null;
-  document.querySelectorAll('#filterChips .chip').forEach(ch=>
-    ch.classList.toggle('active', ch.dataset.filter===cur));
-}
-function applyFilter(id){
-  const f=FILTERS.find(x=>x.id===id); if(!f) return;
-  curPage().color={...f.c, filter:id};
-  if(state.before) setBefore(false);
-  syncColor(); refreshThumb(state.fi,state.pi); refreshPreviewDebounced(); commit();
-}
-// Called whenever a manual control (slider / mode) is touched: drop out of any
-// preset into "Manual" so the chips reflect that the look is now hand-tuned.
 function markManual(){
   if(curPage()) curPage().color.filter='manual';
 }
-$('#filterChips').addEventListener('click',e=>{
-  const ch=e.target.closest('.chip'); if(!ch||!curPage()) return;
-  if(ch.dataset.filter==='manual'){ markManual(); syncFilterChips(); return; }
-  applyFilter(ch.dataset.filter);
-});
 function syncAngle(){
   const p=curPage();
   $('#angleVal').textContent=p.angle.toFixed(1);
@@ -735,7 +1726,7 @@ function syncCropInputs(){
 function setAngle(v){
   const p=curPage(); p.angle=Math.round(Math.max(-12,Math.min(12,v))*10)/10;
   syncAngle(); refreshPreviewDebounced(); refreshThumbSoon(state.fi,state.pi);
-  $('#editState').textContent = pageEdited(curFile(),state.pi)?'edited':'auto';
+  syncEditState();
   commitSoon();
 }
 
@@ -743,21 +1734,114 @@ $('#angleSlider').addEventListener('input',e=>setAngle(parseFloat(e.target.value
 document.querySelectorAll('[data-da]').forEach(b=>
   b.onclick=()=>setAngle(curPage().angle+parseFloat(b.dataset.da)));
 $('#angleReset').onclick=()=>setAngle(curFile().auto[state.pi].angle);
+$('#angleZero').onclick=()=>setAngle(0);
 
+// ---- page rotation (coarse, degrees clockwise) ---------------------------
+// Separate from tilt: tilt is the ±12° skew fix, rotation turns the whole
+// page (slider for any degree, button for quarter turns). The server rotates
+// first, so crop guides and gap removals live in the rotated page's space.
+function normRot(v){ v=((v%360)+360)%360; return v>180 ? v-360 : v; }
+function syncRotate(){
+  const p=curPage(); if(!p) return;
+  const r=Math.round(p.rotate||0);
+  $('#rotVal').textContent=r;
+  $('#rotSlider').value=r;
+}
+// Keep crop margins (and, for 180°, gap removals) glued to the content when
+// the rotation jumps between exact multiples of 90. Arbitrary slider angles
+// leave them as plain fractions of the new page.
+function remapQuarter(p, oldR, newR){
+  const oq=Math.round(oldR/90), nq=Math.round(newR/90);
+  if(Math.abs(oldR-oq*90)>0.01||Math.abs(newR-nq*90)>0.01) return;
+  const d=((nq-oq)%4+4)%4;
+  if(!d) return;
+  let c={...p.crop};
+  for(let i=0;i<d;i++) c={left:c.bottom, top:c.left, right:c.top, bottom:c.right};
+  p.crop=c;
+  if(p.removals&&p.removals.length){
+    if(d===2){
+      p.removals=p.removals.map(r=>({top:1-r.bottom, bottom:1-r.top}));
+    }else{
+      p.removals=[];          // horizontal bands don't survive a quarter turn
+      toast('Gap removals cleared — they don’t survive a quarter turn');
+    }
+  }
+}
+function setRotate(v, remap=true){
+  const p=curPage(); if(!p) return;
+  const nv=normRot(Math.round(v)), old=p.rotate||0;
+  if(nv===old) return;
+  if(remap) remapQuarter(p, old, nv);
+  p.rotate=nv;
+  state.pendingGaps=[];
+  syncRotate(); syncCropInputs();
+  refreshPreviewDebounced(); refreshThumbSoon(state.fi,state.pi);
+  syncEditState();
+  commitSoon();
+}
+$('#rotSlider').addEventListener('input',e=>setRotate(parseFloat(e.target.value)));
+$('#rot90').onclick=()=>{ const p=curPage(); if(!p) return;
+  setRotate((p.rotate||0)+90); commit(); };
+$('#rotReset').onclick=()=>{ setRotate(0); commit(); };
+// Fix all: snap every page to the nearest quarter turn, then rotate any page
+// that would still export landscape by a further 90° so everything comes out
+// upright portrait. Pages already upright keep their (quarter-snapped) turn.
+$('#rotFixAll').onclick=()=>{
+  if(!state.files.length){ toast('Load a PDF first'); return; }
+  let fixed=0;
+  state.files.forEach(f=>f.pages.forEach(p=>{
+    const old=p.rotate||0;
+    let r=normRot(Math.round(old/90)*90);
+    const swapped=Math.round(r/90)%2!==0;
+    const w=swapped?p.h:p.w, h=swapped?p.w:p.h;
+    if(w>h) r=normRot(r+90);
+    if(r!==old){
+      remapQuarter(p, old, r);
+      p.rotate=r;
+      fixed++;
+    }
+  }));
+  state.pendingGaps=[];
+  syncRotate(); syncCropInputs(); drawCrop();
+  refreshAllThumbs(); refreshPreview();
+  commit();
+  toast(fixed
+    ? `Fixed orientation — ${fixed} page${fixed===1?'':'s'} aligned upright portrait`
+    : 'All pages are already upright portrait');
+};
+function applyRot(remaining){
+  const pg=curPage(); if(!pg){ toast('Load a PDF first'); return; }
+  const r=pg.rotate||0; const pages=applyTargets(remaining);
+  pages.forEach(p=>{ const old=p.rotate||0; if(old===r) return;
+    remapQuarter(p, old, r); p.rotate=r; });
+  toast(`Rotation ${r}° applied to ${pages.length} page${pages.length===1?'':'s'}`
+    +(remaining?' (this page → end)':''));
+  state.pendingGaps=[];
+  drawCrop(); refreshAllThumbs(); refreshPreview(); commit();
+}
+$('#applyRotAll').onclick=()=>applyRot(false);
+$('#applyRotRemaining').onclick=()=>applyRot(true);
+
+// The main preview shows the page uncropped, so margin tweaks normally don't
+// touch it — unless the watermark is anchored to the margins, in which case it
+// has to be re-rendered so the overlay tracks the guides live.
+function cropChanged(){
+  if(wmEffOn(curPage()) && state.watermark.centerMargins) refreshPreviewDebounced();
+}
 function cropInput(id,key){
   $(id).addEventListener('input',e=>{
     let v=parseFloat(e.target.value)/100; if(isNaN(v))v=0;
     curPage().crop[key]=Math.max(0,Math.min(0.49,v));
-    drawCrop(); refreshThumbSoon(state.fi,state.pi); commitSoon();
+    drawCrop(); refreshThumbSoon(state.fi,state.pi); cropChanged(); commitSoon();
   });
 }
 cropInput('#mTop','top'); cropInput('#mBot','bottom');
 cropInput('#mLeft','left'); cropInput('#mRight','right');
 
 $('#cropAuto').onclick=()=>{ curPage().crop={...curFile().auto[state.pi].crop};
-  syncCropInputs(); drawCrop(); refreshThumb(state.fi,state.pi); commit(); };
+  syncCropInputs(); drawCrop(); refreshThumb(state.fi,state.pi); cropChanged(); commit(); };
 $('#cropClear').onclick=()=>{ curPage().crop={left:0,top:0,right:0,bottom:0};
-  syncCropInputs(); drawCrop(); refreshThumb(state.fi,state.pi); commit(); };
+  syncCropInputs(); drawCrop(); refreshThumb(state.fi,state.pi); cropChanged(); commit(); };
 
 // ---- scan / colour ------------------------------------------------------
 function applyColor(c){
@@ -768,7 +1852,7 @@ function applyColor(c){
 $('#scanAuto').onclick=()=>applyColor(AUTO_SCAN);
 $('#scanOff').onclick=()=>applyColor(DEF_COLOR);
 $('#cMode').addEventListener('change',e=>{
-  curPage().color.mode=e.target.value; markManual(); syncFilterChips();
+  curPage().color.mode=e.target.value; markManual();
   refreshThumbSoon(state.fi,state.pi); refreshPreviewDebounced(); commit(); });
 function colorSlider(id,valId,key,scale=1,fmt){
   $(id).addEventListener('input',e=>{
@@ -780,6 +1864,7 @@ function colorSlider(id,valId,key,scale=1,fmt){
     syncColor(); refreshThumbSoon(state.fi,state.pi); refreshPreviewDebounced(); commitSoon();
   });
 }
+colorSlider('#cDeyellow','#vDeyellow','deyellow',100,v=>Math.round(v)+'%');
 colorSlider('#cWhiten','#vWhiten','whiten',100,v=>Math.round(v)+'%');
 colorSlider('#cBright','#vBright','brightness',1,v=>v.toFixed(2));
 colorSlider('#cContrast','#vContrast','contrast',1,v=>v.toFixed(2));
@@ -796,13 +1881,27 @@ function setBefore(on){
 }
 $('#beforeBtn').onclick=()=>setBefore(!state.before);
 
-// ---- watermark (global overlay on every page) ---------------------------
+// ---- watermark (branding overlay) ---------------------------------------
+// Scope 'all': one on/off switch stamps every page (state.watermark.on).
+// Scope 'page': the same button toggles p.wm for the page being viewed, so
+// only explicitly stamped pages carry the watermark.
+function wmEffOn(p){
+  const w=state.watermark;
+  return w.scope==='page' ? !!(p&&p.wm) : w.on;
+}
+function wmAnyOn(){
+  const w=state.watermark;
+  return w.scope==='page' ? state.files.some(f=>f.pages.some(p=>p.wm)) : w.on;
+}
 function syncWatermarkBtn(){
   const w=state.watermark;
   const b=$('#wmToggle');
-  b.classList.toggle('active',w.on);
-  b.textContent = w.on ? '🏷 Watermark: On' : '🏷 Watermark: Off';
-  $('#wmBadge').style.display = w.on ? '' : 'none';
+  const eff=wmEffOn(curPage());
+  b.classList.toggle('active',eff);
+  b.textContent = w.scope==='page'
+    ? (eff ? '🏷 Watermark (this page): On' : '🏷 Watermark (this page): Off')
+    : (w.on ? '🏷 Watermark: On' : '🏷 Watermark: Off');
+  $('#wmBadge').style.display = wmAnyOn() ? '' : 'none';
   // keep the sliders in step with state (e.g. after undo/redo/reset)
   $('#wmOpacity').value=Math.round(w.opacity*100);
   $('#vWmOp').textContent=Math.round(w.opacity*100)+'%';
@@ -814,18 +1913,64 @@ function syncWatermarkBtn(){
   $('#vWmDx').textContent=Math.round(w.dx*100)+'%';
   $('#wmDy').value=Math.round(w.dy*100);
   $('#vWmDy').textContent=Math.round(w.dy*100)+'%';
+  $('#wmScopeAll').classList.toggle('active', w.scope!=='page');
+  $('#wmScopePage').classList.toggle('active', w.scope==='page');
+  const cb=$('#wmCenterBtn');
+  cb.classList.toggle('active',w.centerMargins);
+  cb.textContent = w.centerMargins ? '⊹ Center in margins: On'
+                                   : '⊹ Center in margins: Off';
+  $('#wmCenterHint').textContent = w.centerMargins
+    ? 'Sitting in the middle of each page’s crop margins — it follows the guides live. Size is unchanged; use Size / scale for that.'
+    : 'Centred on the whole sheet. Turn on to sit it in the middle of the crop margins instead — same size, it just moves, and it follows the guides live.';
 }
+// In 'page' scope the toggle only touches the page on screen; in 'all' scope
+// it flips the global switch for every page, as before.
 $('#wmToggle').onclick=()=>{
-  state.watermark.on=!state.watermark.on;
+  const w=state.watermark;
+  if(w.scope==='page'){
+    const p=curPage(); if(!p){ toast('Load a PDF first'); return; }
+    p.wm=!p.wm;
+    syncWatermarkBtn();
+    if(state.before) setBefore(false);
+    refreshThumb(state.fi,state.pi); refreshPreview(); commit();
+    return;
+  }
+  w.on=!w.on;
   syncWatermarkBtn();
   if(state.before) setBefore(false);   // watermark isn't shown on the original
   refreshAllThumbs(); refreshPreview(); commit();
+};
+// Scope: every page at once, or page-by-page via the same toggle.
+function setWmScope(scope){
+  if(state.watermark.scope===scope) return;
+  state.watermark.scope=scope;
+  syncWatermarkBtn();
+  if(state.before) setBefore(false);
+  refreshAllThumbs(); refreshPreview();
+  if(scope==='page')
+    toast('Specific-pages mode: the Watermark button now stamps only the page you’re viewing');
+  commit();
+}
+$('#wmScopeAll').onclick=()=>setWmScope('all');
+$('#wmScopePage').onclick=()=>setWmScope('page');
+// Anchor the overlay to the crop margins instead of the whole sheet. Both the
+// preview and the export use the same anchor, so what you see is what exports.
+$('#wmCenterBtn').onclick=()=>{
+  state.watermark.centerMargins=!state.watermark.centerMargins;
+  syncWatermarkBtn();
+  if(!wmAnyOn()){
+    toast('Turn the watermark on to see it');
+  }else{
+    if(state.before) setBefore(false);
+    refreshAllThumbs(); refreshPreview();
+  }
+  commit();
 };
 // Any watermark tweak: live-update the main preview, debounce the thumbnails
 // (expensive to re-render for every page), and coalesce into one undo step.
 let wmTimer=null;
 function wmChanged(){
-  if(!state.watermark.on) return;
+  if(!wmAnyOn()) return;
   if(state.before) setBefore(false);
   refreshPreviewDebounced();
   clearTimeout(wmTimer);
@@ -853,9 +1998,9 @@ $('#wmDy').addEventListener('input',e=>{
   $('#vWmDy').textContent=e.target.value+'%'; wmChanged();
 });
 $('#wmReset').onclick=()=>{
-  Object.assign(state.watermark,{scale:1,rotate:0,dx:0,dy:0});
+  Object.assign(state.watermark,{scale:1.3,rotate:0,dx:0,dy:0});
   syncWatermarkBtn();
-  if(state.watermark.on){ if(state.before) setBefore(false);
+  if(wmAnyOn()){ if(state.before) setBefore(false);
     refreshAllThumbs(); refreshPreview(); }
   commit();
 };
@@ -927,25 +2072,498 @@ $('#applySample').onclick=()=>{
   syncColor(); refreshAllThumbs(); refreshPreview(); commit();
 };
 
-// ---- batch apply --------------------------------------------------------
-$('#applyAngleAll').onclick=()=>{
-  const a=curPage().angle; let n=0;
-  state.files.forEach(f=>f.pages.forEach(p=>{p.angle=a;n++;}));
-  toast(`Angle ${a.toFixed(1)}° applied to ${n} pages`);
+// ---- per-section apply --------------------------------------------------
+// Target pages for an apply op: every loaded page, or — for "→ remaining" —
+// the current page and everything after it to the end, across loaded PDFs.
+function applyTargets(remaining){
+  const all=[];
+  state.files.forEach((f,fi)=>f.pages.forEach((p,pi)=>all.push({p,fi,pi})));
+  if(!remaining) return all.map(t=>t.p);
+  return all.filter(t=>t.fi>state.fi || (t.fi===state.fi && t.pi>=state.pi)).map(t=>t.p);
+}
+function applyAngle(remaining){
+  const pg=curPage(); if(!pg){ toast('Load a PDF first'); return; }
+  const a=pg.angle; const pages=applyTargets(remaining);
+  pages.forEach(p=>{p.angle=a;});
+  toast(`Angle ${a.toFixed(1)}° applied to ${pages.length} page${pages.length===1?'':'s'}`
+    +(remaining?' (this page → end)':''));
   refreshAllThumbs(); refreshPreview(); commit();
-};
-$('#applyCropAll').onclick=()=>{
-  const c={...curPage().crop}; let n=0;
-  state.files.forEach(f=>f.pages.forEach(p=>{p.crop={...c};n++;}));
-  toast(`Margins applied to ${n} pages`); refreshAllThumbs(); drawCrop(); commit();
-};
-$('#applyColorAll').onclick=()=>{
-  const c={...curPage().color}; let n=0;
-  state.files.forEach(f=>f.pages.forEach(p=>{p.color={...c};n++;}));
-  toast(`Colour applied to ${n} pages`);
+}
+$('#applyAngleAll').onclick=()=>applyAngle(false);
+$('#applyAngleRemaining').onclick=()=>applyAngle(true);
+function applyCrop(remaining){
+  const pg=curPage(); if(!pg){ toast('Load a PDF first'); return; }
+  const c={...pg.crop}; const pages=applyTargets(remaining);
+  pages.forEach(p=>{p.crop={...c};});
+  toast(`Margins applied to ${pages.length} page${pages.length===1?'':'s'}`
+    +(remaining?' (this page → end)':''));
+  refreshAllThumbs(); drawCrop(); cropChanged(); commit();
+}
+$('#applyCropAll').onclick=()=>applyCrop(false);
+$('#applyCropRemaining').onclick=()=>applyCrop(true);
+function applyColorAll(remaining){
+  const pg=curPage(); if(!pg){ toast('Load a PDF first'); return; }
+  const c={...pg.color}; const pages=applyTargets(remaining);
+  pages.forEach(p=>{p.color={...c};});
+  toast(`Colour applied to ${pages.length} page${pages.length===1?'':'s'}`
+    +(remaining?' (this page → end)':''));
   if(state.before) setBefore(false);
   refreshAllThumbs(); refreshPreview(); commit();
+}
+$('#applyColorAll').onclick=()=>applyColorAll(false);
+$('#applyColorRemaining').onclick=()=>applyColorAll(true);
+// quick-apply bar (top of the panel) — same actions, faster to reach
+$('#qbCropAll').onclick=()=>applyCrop(false);
+$('#qbCropRemaining').onclick=()=>applyCrop(true);
+$('#qbColorAll').onclick=()=>applyColorAll(false);
+$('#qbColorRemaining').onclick=()=>applyColorAll(true);
+syncDeletedUI();
+syncWatermarkBtn();      // paint the watermark controls from the defaults
+
+// ---- PYQs (board-wise previous-year questions) ---------------------------
+// Theory PDFs are shared across boards; PYQs are appended per board from the
+// server-side PYQs/<BOARD>/<MEDIUM>/<SUBJECT>/<CHAPTER>/ folders. The dropdowns
+// mirror the folder tree, so adding folders/PDFs on disk shows up on reload.
+const pyq={board:'',medium:'',subject:'',chapter:'',pdfs:[]};
+async function pyqOptions(params){
+  const q=new URLSearchParams(params).toString();
+  const r=await fetch('/api/pyqs/options'+(q?'?'+q:''));
+  if(!r.ok) throw new Error('PYQs folder not found on server');
+  return r.json();
+}
+function pyqFill(sel,items,ph){
+  sel.innerHTML='';
+  const o=document.createElement('option');o.value='';o.textContent=ph;sel.appendChild(o);
+  (items||[]).forEach(v=>{const op=document.createElement('option');
+    op.value=v;op.textContent=v;sel.appendChild(op);});
+  sel.disabled=!(items&&items.length);
+}
+function syncPyqBtn(){
+  const ready=pyq.board&&pyq.medium&&pyq.subject&&pyq.chapter&&pyq.pdfs.length;
+  $('#pyqAppendBtn').disabled=!(ready&&state.files.length);
+  const badge=$('#pyqBadge');
+  badge.textContent=pyq.pdfs.length;
+  badge.style.display=pyq.pdfs.length?'':'none';
+}
+function pyqReset(level){                       // clear selections below a level
+  if(level<=1){pyq.medium='';pyqFill($('#pyqMedium'),[],'— medium —');}
+  if(level<=2){pyq.subject='';pyqFill($('#pyqSubject'),[],'— subject —');}
+  if(level<=3){pyq.chapter='';pyq.pdfs=[];pyqFill($('#pyqChapter'),[],'— chapter —');
+    $('#pyqInfo').textContent='';}
+  syncPyqBtn();
+}
+$('#pyqBoard').onchange=async e=>{
+  pyq.board=e.target.value; pyqReset(1);
+  if(!pyq.board) return;
+  try{ pyqFill($('#pyqMedium'),(await pyqOptions({board:pyq.board})).dirs,'— medium —'); }
+  catch(err){ toast('Error: '+err.message); }
 };
+$('#pyqMedium').onchange=async e=>{
+  pyq.medium=e.target.value; pyqReset(2);
+  if(!pyq.medium) return;
+  try{ pyqFill($('#pyqSubject'),
+    (await pyqOptions({board:pyq.board,medium:pyq.medium})).dirs,'— subject —'); }
+  catch(err){ toast('Error: '+err.message); }
+};
+$('#pyqSubject').onchange=async e=>{
+  pyq.subject=e.target.value; pyqReset(3);
+  if(!pyq.subject) return;
+  try{ pyqFill($('#pyqChapter'),
+    (await pyqOptions({board:pyq.board,medium:pyq.medium,subject:pyq.subject})).dirs,'— chapter —'); }
+  catch(err){ toast('Error: '+err.message); }
+};
+$('#pyqChapter').onchange=async e=>{
+  pyq.chapter=e.target.value; pyq.pdfs=[];
+  $('#pyqInfo').textContent=''; syncPyqBtn();
+  if(!pyq.chapter) return;
+  try{
+    const d=await pyqOptions({board:pyq.board,medium:pyq.medium,
+      subject:pyq.subject,chapter:pyq.chapter});
+    pyq.pdfs=d.pdfs;
+    $('#pyqInfo').textContent=d.pdfs.length
+      ? `${d.pdfs.length} PDF(s): ${d.pdfs.join(', ')}`
+      : 'No PYQ PDFs uploaded in this chapter folder yet.';
+  }catch(err){ toast('Error: '+err.message); }
+  syncPyqBtn();
+};
+$('#pyqAppendBtn').onclick=async()=>{
+  const f=curFile();
+  if(!state.job||!f){ toast('Load a theory PDF first, then append PYQs'); return; }
+  const t=toast('<span class="spinner"></span> Appending & auto-margining PYQs…',0);
+  try{
+    const r=await fetch('/api/pyqs/append',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({job:state.job,fid:f.fid,board:pyq.board,
+        medium:pyq.medium,subject:pyq.subject,chapter:pyq.chapter})});
+    const data=await r.json();
+    if(!r.ok) throw new Error(data.error||'append failed');
+    data.pages.forEach((p,j)=>{
+      f.auto.push({angle:p.angle,crop:{...p.crop}});
+      f.pages.push({src:data.start+j,angle:p.angle,rotate:0,crop:{...p.crop},removals:[],overlays:[],
+        color:{...DEF_COLOR},bfit:{...DEF_BFIT},deleted:false,wm:false,w:p.w,h:p.h});
+    });
+    f.npages=data.npages;
+    state.pi=data.start;                 // jump to the first appended page
+    renderRail(); setActiveCard(); loadPage(); syncJobInfo();
+    commit();
+    toast(`✅ Appended ${data.sources.length} PYQ PDF(s) — ${data.pages.length} page(s) added to ${f.name}`);
+  }catch(e){ toast('Error: '+e.message); }
+  finally{ t.remove(); }
+};
+(async function initPyqBoards(){
+  try{ pyqFill($('#pyqBoard'),(await pyqOptions({})).dirs,'— board —'); }
+  catch(_){ $('#pyqInfo').textContent='PYQs folder not found next to server.py.'; }
+})();
+
+// ---- Borders (branded frames from the notes-composer) --------------------
+// The frame is FIXED-SIZE: every exported page is exactly template_size, and
+// the cropped page is contain-fitted into the frame's slot (centred, paper
+// tone fills the slack — nothing is trimmed and the frame never distorts).
+// In the editor the frame is pinned at a constant on-screen size and the
+// PAGE is what moves: it is resized (zoom / per-axis stretch included) so
+// its crop box sits in the frame's window exactly as the export will place
+// it. White bars show added space, dim strips show what gets cropped, and
+// the chapter header is the same HTML/CSS the server rasterises on export.
+// While a guide is being dragged the layout freezes (the drag math pins the
+// page rect) and snaps to the new fit on release.
+let BORDER_META=null;                 // /api/borders/options payload
+function borderMeta(){
+  if(!BORDER_META||!state.borders.cls) return null;
+  return BORDER_META.classes.find(c=>c.name===state.borders.cls)||null;
+}
+// Frame designs cycle over the pages that will actually export (deleted pages
+// don't consume a design) — same order the server uses.
+function borderTplIndex(){
+  const f=curFile(); if(!f) return 0;
+  let n=0;
+  for(let i=0;i<state.pi;i++) if(!f.pages[i].deleted) n++;
+  return n;
+}
+function shrinkToWidth(el, avail, minFs){
+  let fs=parseFloat(el.style.fontSize)||16;
+  while(el.scrollWidth>avail&&fs>minFs){ fs-=1; el.style.fontSize=fs+'px'; }
+  return fs;
+}
+function escapeHtml(s){
+  return s.replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;',
+    '"':'&quot;',"'":'&#39;'}[ch]));
+}
+let borderGuideDrag=false;    // guides being dragged -> freeze the layout
+let pageZoom=1;               // centre-page zoom factor (0.1 – 2)
+// Constant on-screen scale for the frame: fit it inside the visible stage.
+// Depends only on the stage size and the template, never on the page.
+function borderFrameScale(meta){
+  const ca=$('#canvasArea');
+  const [tw,th]=meta.config.template_size;
+  const availW=Math.max(220, ca.clientWidth-64);
+  const availH=Math.max(220, ca.clientHeight-44);
+  return Math.min(availW/tw, availH/th)*pageZoom;
+}
+// Without a border frame the page image is sized here: contain-fit into the
+// stage (the old max-width/max-height CSS), then scaled by the page zoom.
+function applyPlainZoom(){
+  const img=$('#pageImg');
+  const natW=img.naturalWidth, natH=img.naturalHeight;
+  if(!natW||!natH){ img.style.width=''; img.style.height=''; return; }
+  const ca=$('#canvasArea');
+  const availW=Math.max(120, ca.clientWidth-44);
+  const availH=Math.max(120, ca.clientHeight-44);
+  const fit=Math.min(availW/natW, availH/natH);
+  img.style.width=(natW*fit*pageZoom).toFixed(1)+'px';
+  img.style.height=(natH*fit*pageZoom).toFixed(1)+'px';
+}
+function drawBorder(){
+  const layer=$('#borderLayer'); if(!layer) return;
+  const img=$('#pageImg');
+  const p=curPage(), meta=borderMeta();
+  const usable=state.borders.on&&meta&&meta.template_count>0;
+  $('#frame').classList.toggle('bordered', !!(usable&&p&&!p.deleted));
+  if(!usable||!p||p.deleted||state.before){
+    layer.style.display='none';
+    applyPlainZoom();                 // stage-fit sizing, page zoom applied
+    $('#frame').style.transform='';
+    return;
+  }
+  if(borderGuideDrag) return;   // frozen mid-drag; snaps on pointer-up
+  const natW=img.naturalWidth, natH=img.naturalHeight;
+  if(!natW||!natH){ layer.style.display='none'; return; }
+  layer.style.display='';
+  const c=p.crop;
+  const kw=Math.max(0.02,1-c.left-c.right), kh=Math.max(0.02,1-c.top-c.bottom);
+  const cfg=meta.config, slot=cfg.slot;
+  const tw=cfg.template_size[0], th=cfg.template_size[1];
+  const F=borderFrameScale(meta);
+  // Export math in display units: contain-fit the crop box into the FIXED
+  // slot, then zoom + per-axis stretch. The page image is resized to make
+  // that true on screen — the frame itself never moves or changes size.
+  const bf=p.bfit||DEF_BFIT;
+  const z=bf.zoom||1;
+  const stw=bf.stretchW||1, sth=bf.stretchH||1;
+  const slw=slot.w*F, slh=slot.h*F;                   // slot rect (fixed)
+  // per-axis fit scales — mirrors the server's fit_scales():
+  //   width: auto-zoom so the width fills the window (not-A4 pages)
+  //   fill:  cover the window fully with at most ~15% stretch
+  //   page:  contain the whole page
+  const cw=kw*natW, ch=kh*natH, mode=bf.mode||'page';
+  let fx, fy;
+  if(mode==='width'){ fx=fy=slw/cw; }
+  else if(mode==='fill'){
+    const DMAX=1.15, need=(slw/slh)/(cw/ch);
+    const sxs=need>1?Math.min(need,DMAX):1;
+    const sys=need<1?Math.min(1/need,DMAX):1;
+    const k=Math.max(slw/(cw*sxs), slh/(ch*sys));
+    fx=k*sxs; fy=k*sys;
+  }else{ fx=fy=Math.min(slw/cw, slh/ch); }
+  const boxW=cw*fx*z*stw, boxH=ch*fy*z*sth;
+  const W=boxW/kw, H=boxH/kh;                         // page display size
+  img.style.width=W+'px'; img.style.height=H+'px';
+  const box={x:c.left*W, y:c.top*H, w:boxW, h:boxH};
+  // slot centre locks onto the crop-box centre (content is centred in it)
+  const sxp=box.x+box.w/2-slw/2, syp=box.y+box.h/2-slh/2;
+  const ox=sxp-slot.x*F, oy=syp-slot.y*F;             // template origin
+  const bimg=$('#borderImg');
+  const src=`/api/borders/template?class=${encodeURIComponent(state.borders.cls)}`
+    +`&i=${borderTplIndex()%meta.template_count}&w=1100&v=${meta.version||0}`;
+  if(bimg.dataset.src!==src){ bimg.dataset.src=src; bimg.src=src; }
+  bimg.style.left=ox+'px'; bimg.style.top=oy+'px';
+  bimg.style.width=(tw*F)+'px'; bimg.style.height=(th*F)+'px';
+  // Pin the frame art dead-centre in the stage: flex centres the PAGE, so a
+  // page resize would otherwise drag the art along — counter-shift the whole
+  // #frame so the art never moves and only the notes slide/scale under it.
+  const ca=$('#canvasArea'), fr=$('#frame');
+  fr.style.transform='';
+  const un=fr.getBoundingClientRect(), car=ca.getBoundingClientRect();
+  const dx=(car.x+(ca.clientWidth-tw*F)/2)-(un.x+ox);
+  const dy=(car.y+(ca.clientHeight-th*F)/2)-(un.y+oy);
+  fr.style.transform=`translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px)`;
+  // White bars = the space the export adds around the content in the slot
+  // (slightly padded outward so the slot's soft edge never shows the page).
+  const bg=cfg.background_color||[255,255,255];
+  const bgCss=`rgb(${bg[0]},${bg[1]},${bg[2]})`;
+  const pad=2;
+  const bar=(id,x,y,w,h,bgc)=>{const el=$(id);
+    if(w<=0.5||h<=0.5){ el.style.display='none'; return; }
+    el.style.display=''; if(bgc) el.style.background=bgc;
+    el.style.left=x+'px'; el.style.top=y+'px';
+    el.style.width=w+'px'; el.style.height=h+'px';};
+  bar('#bfL', sxp-pad, syp-pad, box.x-(sxp-pad), slh+2*pad, bgCss);
+  bar('#bfR', box.x+box.w, syp-pad, (sxp+slw+pad)-(box.x+box.w), slh+2*pad, bgCss);
+  bar('#bfT', box.x, syp-pad, box.w, box.y-(syp-pad), bgCss);
+  bar('#bfB', box.x, box.y+box.h, box.w, (syp+slh+pad)-(box.y+box.h), bgCss);
+  // Content that zoom/stretch pushes past the window gets cropped on export —
+  // dim it here like every other cut-away region so the preview reads true.
+  const ix0=Math.max(box.x,sxp), ix1=Math.min(box.x+box.w,sxp+slw);
+  bar('#bcL', box.x, box.y, sxp-box.x, box.h);
+  bar('#bcR', sxp+slw, box.y, (box.x+box.w)-(sxp+slw), box.h);
+  bar('#bcT', ix0, box.y, ix1-ix0, syp-box.y);
+  bar('#bcB', ix0, syp+slh, ix1-ix0, (box.y+box.h)-(syp+slh));
+  drawBorderHeader(cfg.header||{}, F, F, ox, oy);
+}
+// Mirrors the server's header layout: x-positions & type scale with the
+// horizontal stretch, y-positions with the vertical one, so glyphs never
+// distort. Label shrinks to end before the divider; the name shrinks a bit,
+// then wraps to at most name_max_lines balanced lines.
+function drawBorderHeader(h, sx, sy, ox, oy){
+  const label=$('#bhLabel'), name=$('#bhName');
+  const num=(state.borders.number||'').trim(), nm=(state.borders.name||'').trim();
+  const fw=h.font_weight||700, fs0=(h.font_size||72)*sx, ls=(h.letter_spacing||0)*sx;
+  const cy=oy+(h.center_y||180)*sy;
+  const prefix=h.label_prefix!==undefined?h.label_prefix:'CHAPTER - ';
+  for(const el of [label,name]){
+    el.style.fontWeight=fw; el.style.letterSpacing=ls+'px'; el.style.top=cy+'px';
+  }
+  label.style.color=h.label_color||'#111';
+  name.style.color=h.name_color||'#0497a7';
+  name.style.whiteSpace='nowrap'; name.style.width='auto'; name.style.textWrap='';
+  name.style.lineHeight=h.name_line_height||1.06;
+  label.style.display=''; label.style.alignItems='';
+
+  if(h.use_template_divider){
+    // template art carries the "|": label left of it, name right of it
+    label.textContent=num?prefix+num:'';
+    const labelLeft=(h.label_left!==undefined?h.label_left:(h.text_left||180))*sx;
+    label.style.left=(ox+labelLeft)+'px';
+    label.style.fontSize=fs0+'px';
+    if(num){
+      const avail=h.divider_x*sx-labelLeft-((h.label_right_gap||20)*sx);
+      shrinkToWidth(label, avail, (h.label_min_font_size||24)*sx);
+    }
+    name.textContent=nm;
+    const nameLeft=(h.divider_x+(h.name_gap||24))*sx;
+    name.style.left=(ox+nameLeft)+'px';
+    name.style.fontSize=fs0+'px';
+    if(nm){
+      const zoneW=((h.name_max_right||1400)-h.divider_x-(h.name_gap||24))*sx;
+      shrinkToWidth(name, zoneW, (h.name_one_line_min||26)*sx);
+      if(name.scrollWidth>zoneW+0.5){
+        name.style.whiteSpace='normal'; name.style.width=zoneW+'px';
+        name.style.textWrap='balance';
+        let fs=fs0; name.style.fontSize=fs+'px';
+        const lh=h.name_line_height||1.06;
+        const maxLines=h.name_max_lines||2, maxH=(h.name_max_height||92)*sy,
+              minFs=(h.name_min_font_size||16)*sx;
+        const over=()=>{const lines=Math.round(name.offsetHeight/(fs*lh));
+          return lines>maxLines||name.offsetHeight>maxH
+            ||name.scrollWidth>name.clientWidth+1;};
+        while(over()&&fs>minFs){ fs-=1; name.style.fontSize=fs+'px'; }
+      }
+    }
+  }else{
+    // no divider in the art: draw "LABEL | Name" as one flex row
+    name.textContent='';
+    const dv=h.divider||{width:3,height:54,color:'#12303a',radius:2};
+    const gap=(h.name_gap||24)*sx;
+    const parts=[];
+    if(num) parts.push(`<span style="color:${h.label_color||'#111'}">${escapeHtml(prefix+num)}</span>`);
+    if(num&&nm&&(dv.width||0)>0) parts.push(
+      `<span style="display:inline-block;width:${dv.width*sx}px;height:${dv.height*sy}px;`
+      +`background:${dv.color||'#12303a'};border-radius:${(dv.radius||2)*sx}px;`
+      +`margin:0 ${gap}px;flex:0 0 auto"></span>`);
+    if(nm) parts.push(`<span style="color:${h.name_color||'#0497a7'}">${escapeHtml(nm)}</span>`);
+    label.innerHTML=parts.join('');
+    label.style.display='flex'; label.style.alignItems='center';
+    label.style.left=(ox+(h.text_left||180)*sx)+'px';
+    label.style.fontSize=fs0+'px';
+    shrinkToWidth(label, ((h.name_max_right||1400)-(h.text_left||180))*sx,
+                  (h.name_min_font_size||16)*sx);
+  }
+}
+function fillBorderBoards(){
+  const meta=borderMeta(), bSel=$('#bdBoard');
+  bSel.innerHTML=''; bSel.add(new Option('— no cover —',''));
+  (meta?meta.boards:[]).forEach(b=>bSel.add(new Option(b,b)));
+  bSel.value=(meta&&meta.boards.includes(state.borders.board))?state.borders.board:'';
+  state.borders.board=bSel.value;
+  fillBorderStreams();
+}
+function fillBorderStreams(){
+  const meta=borderMeta(), sSel=$('#bdStream');
+  sSel.innerHTML=''; sSel.add(new Option('— stream —',''));
+  const streams=(meta&&state.borders.board)
+    ?(meta.streams_by_board[state.borders.board]||[]):[];
+  streams.forEach(s=>sSel.add(new Option(s,s)));
+  sSel.disabled=!streams.length;
+  sSel.value=streams.includes(state.borders.stream)?state.borders.stream:'';
+  state.borders.stream=sSel.value;
+  // classes like 10th sort covers by board alone — no stream row at all
+  const anyStreams=meta&&Object.values(meta.streams_by_board).some(a=>a.length);
+  $('#bdStreamRow').style.display=anyStreams?'':'none';
+}
+function syncBordersUI(){
+  const b=state.borders, meta=borderMeta(), t=$('#bdToggle');
+  t.classList.toggle('active',b.on);
+  t.textContent=b.on?'🖼 Borders: On':'🖼 Borders: Off';
+  $('#bdBadge').style.display=b.on?'':'none';
+  if($('#bdClass').value!==b.cls) $('#bdClass').value=b.cls;
+  if($('#bdNum').value!==b.number) $('#bdNum').value=b.number;
+  if($('#bdName').value!==b.name) $('#bdName').value=b.name;
+  const bf=(curPage()&&curPage().bfit)||DEF_BFIT;
+  const zpc=Math.round((bf.zoom||1)*100);
+  $('#bdZoom').value=zpc;
+  $('#vBdZoom').textContent=zpc+'%';
+  const wpc=Math.round((bf.stretchW||1)*100), hpc=Math.round((bf.stretchH||1)*100);
+  $('#bdStW').value=wpc; $('#vBdStW').textContent=wpc+'%';
+  $('#bdStH').value=hpc; $('#vBdStH').textContent=hpc+'%';
+  document.querySelectorAll('#bdFitChips .chip').forEach(chp=>
+    chp.classList.toggle('active', chp.dataset.bdfit===(bf.mode||'page')));
+  const info=$('#bdInfo');
+  if(!meta){ info.textContent='No border assets found on the server (borders/ folder).'; return; }
+  if(!meta.template_count){
+    info.textContent=`No ${b.cls} frames yet — drop template PNGs into borders/${b.cls}/templates/ (covers go in borders/${b.cls}/front_pages/).`;
+    return;
+  }
+  const streams=(b.board?meta.streams_by_board[b.board]:null)||[];
+  const coverReady=b.board&&(!streams.length||b.stream);
+  const anyStreams=Object.values(meta.streams_by_board).some(a=>a.length);
+  info.textContent=`${meta.template_count} frame designs cycle page by page.`
+    +(coverReady
+      ? ` Cover “${b.board}${b.stream?' · '+b.stream:''}” is added as page 1 on export.`
+      : (meta.boards.length
+          ? (b.board?' Pick a stream to add a cover page on export.'
+                    :` Pick a board${anyStreams?' & stream':''} to add a cover page on export.`)
+          : ''));
+}
+$('#bdToggle').onclick=()=>{
+  state.borders.on=!state.borders.on;
+  const meta=borderMeta();
+  if(state.borders.on&&(!meta||!meta.template_count))
+    toast(`No ${state.borders.cls||''} border templates on the server yet — the export will fail until they're added`);
+  if(state.before) setBefore(false);
+  syncBordersUI(); drawBorder(); commit();
+};
+$('#bdClass').onchange=e=>{
+  state.borders.cls=e.target.value;
+  fillBorderBoards(); syncBordersUI(); drawBorder(); commit();
+};
+$('#bdBoard').onchange=e=>{
+  state.borders.board=e.target.value; state.borders.stream='';
+  fillBorderStreams(); syncBordersUI(); commit();
+};
+$('#bdStream').onchange=e=>{
+  state.borders.stream=e.target.value; syncBordersUI(); commit();
+};
+function pageBfit(p){ return p.bfit||(p.bfit={...DEF_BFIT}); }
+$('#bdFitChips').addEventListener('click',e=>{
+  const chp=e.target.closest('.chip'); if(!chp) return;
+  const pg=curPage(); if(!pg) return;
+  const bf=pageBfit(pg), m=chp.dataset.bdfit;
+  bf.mode=(bf.mode===m)?'page':m;          // toggle off -> whole-page fit
+  syncBordersUI(); drawBorder(); commit();
+});
+function bdApplyFit(remaining){
+  const pg=curPage(); if(!pg){ toast('Load a PDF first'); return; }
+  const src={...pageBfit(pg)};
+  let n=0;
+  state.files.forEach((f,fi)=>f.pages.forEach((page,pi)=>{
+    if(remaining&&(fi<state.fi||(fi===state.fi&&pi<state.pi))) return;
+    page.bfit={...src}; n++;
+  }));
+  toast(`Border fit applied to ${n} page${n===1?'':'s'}`
+    +(remaining?' (this page → end)':''));
+  drawBorder(); commit();
+}
+$('#bdApplyAll').onclick=()=>bdApplyFit(false);
+$('#bdApplyRemaining').onclick=()=>bdApplyFit(true);
+function bdSlider(id, valId, key){
+  $(id).addEventListener('input',e=>{
+    const pg=curPage(); if(!pg) return;
+    pageBfit(pg)[key]=parseInt(e.target.value)/100;
+    $(valId).textContent=e.target.value+'%';
+    drawBorder(); commitSoon();
+  });
+}
+bdSlider('#bdZoom','#vBdZoom','zoom');
+bdSlider('#bdStW','#vBdStW','stretchW');
+bdSlider('#bdStH','#vBdStH','stretchH');
+$('#bdFitReset').onclick=()=>{
+  const pg=curPage(); if(!pg) return;
+  Object.assign(pageBfit(pg),{zoom:1,stretchW:1,stretchH:1});
+  syncBordersUI(); drawBorder(); commit();
+};
+$('#bdNum').addEventListener('input',e=>{
+  state.borders.number=e.target.value; drawBorder(); commitSoon();
+});
+$('#bdName').addEventListener('input',e=>{
+  state.borders.name=e.target.value; drawBorder(); commitSoon();
+});
+(async function initBorders(){
+  try{
+    const r=await fetch('/api/borders/options');
+    if(!r.ok) throw new Error('borders unavailable');
+    BORDER_META=await r.json();
+  }catch(_){ BORDER_META={classes:[]}; }
+  if(BORDER_META.stale_server)
+    toast('⚠️ The server is running OLDER code than what’s on disk — stop it, '
+      +'re-run ./run.sh and reload this tab. Until then exports may not match '
+      +'the editor.', 15000);
+  const sel=$('#bdClass'); sel.innerHTML='';
+  BORDER_META.classes.forEach(c=>sel.add(new Option(
+    c.template_count?`${c.name} (${c.template_count} designs)`:`${c.name} (no designs yet)`,
+    c.name)));
+  const def=BORDER_META.classes.find(c=>c.template_count>0)||BORDER_META.classes[0];
+  if(def&&!state.borders.cls) state.borders.cls=def.name;
+  fillBorderBoards(); syncBordersUI(); drawBorder();
+})();
 
 // ---- nav ----------------------------------------------------------------
 function step(d){
@@ -969,21 +2587,211 @@ document.addEventListener('keydown',e=>{
   if(e.key==='ArrowRight')step(1);
 });
 
+// ---- history (persistent drafts) -----------------------------------------
+// Every export snapshots the session into drafts/<id>/ on the server: the
+// working PDFs (PYQ appends included) plus everything editable — crops,
+// angles, rotations, gap removals, colours, palette, watermark, borders,
+// deleted pages, DPI. Reopening a draft rebuilds the job from those PDFs and
+// lays the saved state back on top, so old exports stay editable forever.
+function draftState(){
+  return {
+    files: state.files.map(f=>({name:f.name,
+      pages: f.pages.map(p=>({src:p.src, angle:p.angle, rotate:p.rotate||0, crop:{...p.crop},
+        removals:[...(p.removals||[])],
+        overlays:(p.overlays||[]).map(o=>({...o})), color:{...p.color},
+        bfit:{...(p.bfit||DEF_BFIT)}, deleted:!!p.deleted, wm:!!p.wm}))})),
+    watermark:{...state.watermark},
+    borders:{...state.borders},
+    palette: state.palette,
+    dpi: parseInt($('#dpi').value),
+  };
+}
+// Human name for the history list: chapter details when borders carry them,
+// otherwise the file name(s).
+function draftAutoName(){
+  const b=state.borders, parts=[];
+  if((b.number||'').trim()) parts.push('Chapter '+b.number.trim());
+  if((b.name||'').trim()) parts.push(b.name.trim());
+  let nm=parts.join(' - ');
+  const tags=[b.cls, b.board, b.stream].filter(s=>(s||'').trim());
+  if(nm && b.on && tags.length) nm+=' — '+tags.join(' · ');
+  if(!nm) nm=state.files.map(f=>f.name.replace(/\.pdf$/i,'')).join(', ');
+  return nm||'Untitled draft';
+}
+async function saveDraft(exported=false, quiet=false){
+  if(!state.job||!state.files.length){ if(!quiet) toast('Load a PDF first'); return false; }
+  try{
+    const r=await fetch('/api/drafts/save',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({job:state.job, draft:state.draftId,
+        name:draftAutoName(), state:draftState(), exported})});
+    const data=await r.json();
+    if(!r.ok) throw new Error(data.error||'save failed');
+    state.draftId=data.draft;
+    if(!quiet) toast('💾 Draft saved to History — “'+data.name+'”');
+    return true;
+  }catch(e){
+    toast('Draft save failed: '+e.message);
+    return false;
+  }
+}
+
+const histOverlay=$('#histOverlay');
+function fmtWhen(ts){
+  if(!ts) return '';
+  const d=new Date(ts*1000), now=new Date();
+  const sameDay=d.toDateString()===now.toDateString();
+  const time=d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  return sameDay ? 'today '+time
+    : d.toLocaleDateString([], {day:'numeric',month:'short',year:'numeric'})+' '+time;
+}
+async function renderHistory(){
+  const body=$('#histBody');
+  body.innerHTML='<div class="muted">Loading…</div>';
+  let drafts=[];
+  try{
+    const r=await fetch('/api/drafts');
+    if(!r.ok) throw new Error('history unavailable');
+    drafts=(await r.json()).drafts||[];
+  }catch(e){ body.innerHTML='<div class="muted">Error: '+e.message+'</div>'; return; }
+  if(!drafts.length){
+    body.innerHTML='<div class="muted">No drafts yet. Export a PDF (or hit '
+      +'“💾 Save draft”) and it will appear here with all its edits, '
+      +'ready to reopen any time.</div>';
+    return;
+  }
+  body.innerHTML='';
+  drafts.forEach(d=>{
+    const row=document.createElement('div');
+    row.className='histrow'+(d.id===state.draftId?' current':'');
+    const th=document.createElement('img');
+    th.className='hthumb'; th.loading='lazy'; th.alt='';
+    th.src=`/api/drafts/${d.id}/thumb?u=${d.updated||0}`;
+    th.onerror=()=>{ th.style.visibility='hidden'; };
+    const main=document.createElement('div'); main.className='hmain';
+    const nm=document.createElement('div'); nm.className='hname';
+    nm.textContent=d.name; nm.title=d.name;
+    const meta=document.createElement('div'); meta.className='hmeta';
+    const fnames=(d.files||[]).map(f=>f.name).join(', ');
+    meta.textContent=`${(d.files||[]).length} PDF(s) · ${d.npages} pages`
+      +(d.exports?` · exported ${d.exports}×`:'')
+      +` · ${fmtWhen(d.updated)}`+(fnames?` · ${fnames}`:'');
+    meta.title=meta.textContent;
+    main.appendChild(nm); main.appendChild(meta);
+    const btns=document.createElement('div'); btns.className='hbtns';
+    const open=document.createElement('button');
+    open.className='primary'; open.textContent='Open';
+    open.title='Reopen this draft with all its edits';
+    open.onclick=()=>openDraft(d.id);
+    const del=document.createElement('button');
+    del.className='danger'; del.textContent='🗑';
+    del.title='Delete this draft forever';
+    del.onclick=async()=>{
+      if(!confirm(`Delete draft “${d.name}” forever?`)) return;
+      try{
+        const r=await fetch('/api/drafts/'+d.id,{method:'DELETE'});
+        if(!r.ok) throw new Error('delete failed');
+        if(state.draftId===d.id) state.draftId=null;
+        renderHistory();
+        toast('Draft deleted');
+      }catch(e){ toast('Error: '+e.message); }
+    };
+    btns.appendChild(open); btns.appendChild(del);
+    row.appendChild(th); row.appendChild(main); row.appendChild(btns);
+    body.appendChild(row);
+  });
+}
+function showHistory(){ histOverlay.classList.remove('hidden'); renderHistory(); }
+function hideHistory(){ histOverlay.classList.add('hidden'); }
+$('#histBtn').onclick=showHistory;
+$('#histClose').onclick=hideHistory;
+histOverlay.addEventListener('click',e=>{ if(e.target===histOverlay) hideHistory(); });
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'&&!histOverlay.classList.contains('hidden')) hideHistory();
+});
+$('#histSaveBtn').onclick=async()=>{ if(await saveDraft(false)) renderHistory(); };
+
+// Lay a draft's saved edit state over a freshly rebuilt job.
+function applyDraftState(s){
+  (s.files||[]).forEach((sf,fi)=>{
+    const f=state.files[fi]; if(!f) return;
+    // restore the saved page order before laying the edits back on top
+    reorderToMatch(f, (sf.pages||[]).map(sp=>sp.src));
+    (sf.pages||[]).forEach((sp,pi)=>{
+      const p=f.pages[pi]; if(!p) return;
+      p.angle=sp.angle; p.rotate=sp.rotate||0;
+      p.crop={...sp.crop}; p.color={...DEF_COLOR, ...sp.color};
+      p.removals=sp.removals?[...sp.removals]:[];
+      p.overlays=(sp.overlays||[]).map(o=>({...o}));
+      p.bfit={...DEF_BFIT, ...(sp.bfit||{})};
+      p.deleted=!!sp.deleted; p.wm=!!sp.wm;
+    });
+  });
+  if(s.watermark) state.watermark={on:false, scope:'all', opacity:1, scale:1.3,
+    rotate:0, dx:0, dy:0, centerMargins:true, ...s.watermark};
+  if(s.borders){
+    const sb=s.borders;
+    state.borders={on:!!sb.on, cls:sb.cls||state.borders.cls, board:sb.board||'',
+                   stream:sb.stream||'', number:sb.number||'', name:sb.name||''};
+  }
+  state.palette=s.palette||null; state.paletteVersion++;
+  if(s.palette) showPalette(s.palette);
+  else{ $('#paletteBox').style.display='none';
+        $('#sampleBtn').textContent='🎨 Upload / drop sample page…'; }
+  if(s.dpi) $('#dpi').value=s.dpi;
+  syncWatermarkBtn();
+  fillBorderBoards(); syncBordersUI();
+  renderRail(); loadPage(); setActiveCard(); syncDeletedUI(); drawBorder();
+  resetHistory();                  // undo baseline = the restored draft
+}
+async function openDraft(id){
+  if(state.files.length &&
+     !confirm('Opening this draft replaces the PDFs currently loaded '
+              +'(save them as a draft first if needed). Continue?')) return;
+  const t=toast('<span class="spinner"></span> Reopening draft…',0);
+  try{
+    const r=await fetch(`/api/drafts/${id}/open`,{method:'POST'});
+    const data=await r.json();
+    if(!r.ok) throw new Error(data.error||'could not open draft');
+    hideHistory();
+    ingest(data);                       // rebuilds the job like an upload
+    state.draftId=data.draft;           // re-exports update this same draft
+    applyDraftState(data.state||{});    // …then restore every edit on top
+    toast('✅ Draft “'+(data.name||'')+'” reopened — all edits restored');
+  }catch(e){ toast('Error: '+e.message); }
+  finally{ t.remove(); }
+}
+
 // ---- export -------------------------------------------------------------
 $('#exportBtn').onclick=async()=>{
   const settings={};
   state.files.forEach(f=>{
-    settings[f.fid]={pages:f.pages.map(p=>({angle:p.angle,crop:p.crop,color:p.color}))};
+    settings[f.fid]={pages:f.pages.map((p,pi)=>({src:p.src??pi,angle:p.angle,rotate:p.rotate||0,
+      crop:p.crop,removals:p.removals,
+      overlays:(p.overlays||[]).map(ovResolve).filter(Boolean),
+      color:p.color,bfit:p.bfit||DEF_BFIT,deleted:!!p.deleted,wm:!!p.wm}))};
   });
-  const w=state.watermark;
+  const w=state.watermark, bd=state.borders;
   const body={job:state.job,dpi:parseInt($('#dpi').value),settings,
-    watermark:w.on, wmOpacity:w.opacity, wmScale:w.scale, wmRotate:w.rotate,
-    wmDx:w.dx, wmDy:w.dy};
-  const t=toast('<span class="spinner"></span> Rendering PDF(s) at full resolution…',0);
+    watermark:wmAnyOn(), wmScope:w.scope,
+    wmOpacity:w.opacity, wmScale:w.scale, wmRotate:w.rotate,
+    wmDx:w.dx, wmDy:w.dy, wmCenterMargins:w.centerMargins,
+    borders:{on:bd.on, class:bd.cls, board:bd.board, stream:bd.stream,
+             number:bd.number, name:bd.name}};
+  const nDel=deletedCount();
+  // Snapshot the session into History the moment Export is clicked — the
+  // draft (PDFs + every edit) is kept even if the render fails midway.
+  const saved=await saveDraft(true, true);
+  const t=toast('<span class="spinner"></span> Rendering PDF(s) at full resolution…'
+    +(nDel?` <span class="muted">(skipping ${nDel} deleted page${nDel>1?'s':''})</span>`:''),0);
   try{
     const r=await fetch('/api/export',{method:'POST',
       headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    if(!r.ok){ throw new Error('export failed'); }
+    if(!r.ok){
+      let msg='export failed';
+      try{ msg=(await r.json()).error||msg; }catch(_){}
+      throw new Error(msg);
+    }
     const blob=await r.blob();
     const cd=r.headers.get('Content-Disposition')||'';
     const m=cd.match(/filename="?([^"]+)"?/);
@@ -991,7 +2799,7 @@ $('#exportBtn').onclick=async()=>{
     const url=URL.createObjectURL(blob);
     const a=document.createElement('a');a.href=url;a.download=name;a.click();
     URL.revokeObjectURL(url);
-    toast('✅ Exported '+name);
+    toast('✅ Exported '+name+(saved?' — saved to 🕘 History':''));
   }catch(e){ toast('Error: '+e.message); }
   finally{ t.remove(); }
 };
@@ -1010,6 +2818,66 @@ const drop=$('#canvasArea');
 drop.addEventListener('drop',e=>{ if(e.dataTransfer?.files?.length) uploadFiles(e.dataTransfer.files); });
 
 window.addEventListener('resize',()=>{ if(curPage()) drawCrop(); });
+
+// ---- centre-page zoom ---------------------------------------------------
+function setPageZoom(v){
+  pageZoom=Math.min(2, Math.max(0.1, v));
+  const pc=Math.round(pageZoom*100);
+  $('#pageZoom').value=pc;
+  $('#vPageZoom').textContent=pc+'%';
+  if(curPage()) drawCrop();
+}
+$('#pageZoom').addEventListener('input',e=>setPageZoom(parseInt(e.target.value,10)/100));
+$('#pzOut').onclick=()=>setPageZoom(pageZoom-0.1);
+$('#pzIn').onclick=()=>setPageZoom(pageZoom+0.1);
+$('#vPageZoom').ondblclick=()=>setPageZoom(1);
+// Ctrl/Cmd + wheel over the page zooms too
+$('#canvasArea').addEventListener('wheel',e=>{
+  if(!e.ctrlKey&&!e.metaKey) return;
+  e.preventDefault();
+  setPageZoom(pageZoom*(e.deltaY<0?1.08:1/1.08));
+},{passive:false});
+
+// ---- resizable sidebars -------------------------------------------------
+// Drag the 5px strip beside each sidebar; width persists in localStorage.
+// Double-click resets the default.
+function makeSplit(handle, target, fromLeft, key, defW, minW, maxW){
+  const setW=w=>{
+    w=Math.min(maxW, Math.max(minW, Math.round(w)));
+    target.style.width=w+'px';
+    target.style.flex='0 0 '+w+'px';
+    return w;
+  };
+  const saved=parseInt(localStorage.getItem(key)||'',10);
+  if(saved) setW(saved);
+  handle.addEventListener('pointerdown',ev=>{
+    ev.preventDefault();
+    handle.setPointerCapture(ev.pointerId);
+    handle.classList.add('dragging');
+    const startX=ev.clientX, startW=target.getBoundingClientRect().width;
+    let w=startW;
+    const move=e=>{
+      w=setW(startW+(fromLeft?e.clientX-startX:startX-e.clientX));
+      if(curPage()) drawCrop();
+    };
+    const up=()=>{
+      handle.classList.remove('dragging');
+      handle.removeEventListener('pointermove',move);
+      handle.removeEventListener('pointerup',up);
+      try{ localStorage.setItem(key,w); }catch(_){}
+      if(curPage()) drawCrop();
+    };
+    handle.addEventListener('pointermove',move);
+    handle.addEventListener('pointerup',up);
+  });
+  handle.addEventListener('dblclick',()=>{
+    setW(defW);
+    try{ localStorage.removeItem(key); }catch(_){}
+    if(curPage()) drawCrop();
+  });
+}
+makeSplit($('#railSplit'), $('#rail'),  true,  'noteRailW',  250, 150, 600);
+makeSplit($('#panelSplit'),$('#panel'), false, 'notePanelW', 280, 200, 600);
 
 // ---- thumbnail zoom -----------------------------------------------------
 let zoomTimer=null;
@@ -1034,7 +2902,7 @@ applyZoom();
     try{ localStorage.setItem('noteTiles',JSON.stringify(st)); }catch(_){}
   };
   document.querySelectorAll('#panel .sec').forEach(sec=>{
-    if(saved[sec.dataset.sec]) sec.classList.add('collapsed');
+    if(!(sec.dataset.sec in saved) || saved[sec.dataset.sec]) sec.classList.add('collapsed');
     sec.querySelector('h3').addEventListener('click',()=>{
       sec.classList.toggle('collapsed'); persist();
     });
