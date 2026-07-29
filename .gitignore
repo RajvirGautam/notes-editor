@@ -1,12 +1,7 @@
 .venv/
 __pycache__/
 *.pyc
+.DS_Store
 # Saved editing drafts (PDF snapshots + edit state) — kept on disk forever,
 # but not committed (PDF blobs would bloat git). Delete this line to track them.
 drafts/
-
-# Local binary assets — too large for git
-.DS_Store
-PYQs/
-borders/
-test_gaps.pdf
