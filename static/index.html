@@ -106,7 +106,12 @@
      reachable by scrolling — flex centering clips the top-left corner */
   #canvasArea{flex:1;position:relative;overflow:auto;display:flex;
     padding:22px;background:var(--bg)}
-  #frame{position:relative;margin:auto;line-height:0;box-shadow:0 10px 34px rgba(0,0,0,.55)}
+  /* #frameWrap is the real, scrollable box: in bordered mode JS sizes it to the
+     border art and pins #frame inside it absolutely. A transform used to do
+     that pinning, but transforms never extend the scroll area towards the
+     top/left — which made the top of a zoomed page unreachable. */
+  #frameWrap{position:relative;margin:auto;flex:0 0 auto;line-height:0}
+  #frame{position:relative;line-height:0;box-shadow:0 10px 34px rgba(0,0,0,.55)}
   #pageImg{display:block;background:#fff}
   /* centre-page zoom pill */
   #zoomCtl{position:absolute;left:12px;bottom:56px;z-index:6;display:flex;
@@ -116,7 +121,7 @@
   #zoomCtl input[type=range]{width:110px;accent-color:var(--acc)}
   #zoomCtl .zbtn{width:22px;height:22px;padding:0;border-radius:50%;
     font-size:14px;line-height:1}
-  #vPageZoom{font-size:11px;color:var(--mut);width:38px;text-align:right;
+  #vPageZoom{font-size:11px;color:var(--mut);width:44px;text-align:right;
     cursor:pointer;user-select:none}
   /* sidebar resize handles */
   .vsplit{flex:0 0 5px;cursor:col-resize;background:transparent;
@@ -388,7 +393,8 @@
           Batch multiple PDFs at once — nothing leaves your computer.</div>
         <button id="pickBtn" class="primary">Choose PDFs</button>
       </div>
-      <div id="frame" style="display:none">
+      <div id="frameWrap" style="display:none">
+      <div id="frame">
         <img id="pageImg" alt="page preview"/>
         <div class="shade" id="shTop"></div>
         <div class="shade" id="shBot"></div>
@@ -417,10 +423,11 @@
         <div id="removalOverlay" style="position:absolute;inset:0;pointer-events:none;z-index:3" id="removalOverlay"></div>
         <div id="dragBand" class="drag-band" style="display:none;z-index:4;pointer-events:none"></div>
       </div>
+      </div>
     </div>
     <div id="zoomCtl">
       <button class="zbtn" id="pzOut" title="Zoom out">−</button>
-      <input type="range" id="pageZoom" min="10" max="200" step="5" value="100"
+      <input type="range" id="pageZoom" min="10" max="500" step="5" value="100"
         title="Page zoom"/>
       <button class="zbtn" id="pzIn" title="Zoom in">+</button>
       <span id="vPageZoom" title="Double-click to reset">100%</span>
@@ -1055,7 +1062,7 @@ function ingest(data){
   state.fi=0; state.pi=0;
   reorderOn.clear();
   $('#drop').classList.add('hidden');
-  $('#frame').style.display='';
+  $('#frameWrap').style.display='';
   $('#exportBtn').disabled=false;
   $('#discardBtn').disabled=false;
   resetHistory();
@@ -1077,7 +1084,8 @@ function discardJob(){
   for(const k in cards) delete cards[k];
   reorderOn.clear();
   $('#railBody').innerHTML='<div class="emptyRail"><div class="er-ico">📂</div><div class="er-title">No files yet.</div><div class="muted">Add PDF files to get started.</div></div>';
-  $('#frame').style.display='none';
+  $('#frameWrap').style.display='none';
+  unpinFrame();
   $('#drop').classList.remove('hidden');
   $('#exportBtn').disabled=true;
   $('#discardBtn').disabled=true;
@@ -3054,6 +3062,23 @@ function applyPlainZoom(){
   img.style.width=(natW*fit*pageZoom).toFixed(1)+'px';
   img.style.height=(natH*fit*pageZoom).toFixed(1)+'px';
 }
+// Bordered mode: the wrapper takes the border art's box (w x h at art-origin
+// ox/oy inside #frame) and #frame is offset so the art sits at the wrapper's
+// top-left. Plain mode: the wrapper just shrink-wraps the page image again.
+function pinFrame(ox, oy, w, h){
+  const wrap=$('#frameWrap'), fr=$('#frame');
+  wrap.style.width=w.toFixed(1)+'px';
+  wrap.style.height=h.toFixed(1)+'px';
+  fr.style.position='absolute';
+  fr.style.left=(-ox).toFixed(1)+'px';
+  fr.style.top=(-oy).toFixed(1)+'px';
+  fr.style.transform='';
+}
+function unpinFrame(){
+  const wrap=$('#frameWrap'), fr=$('#frame');
+  wrap.style.width=''; wrap.style.height='';
+  fr.style.position=''; fr.style.left=''; fr.style.top=''; fr.style.transform='';
+}
 function drawBorder(){
   const layer=$('#borderLayer'); if(!layer) return;
   const img=$('#pageImg');
@@ -3063,7 +3088,7 @@ function drawBorder(){
   if(!usable||!p||p.deleted||state.before){
     layer.style.display='none';
     applyPlainZoom();                 // stage-fit sizing, page zoom applied
-    $('#frame').style.transform='';
+    unpinFrame();
     return;
   }
   if(borderGuideDrag) return;   // frozen mid-drag; snaps on pointer-up
@@ -3114,15 +3139,12 @@ function drawBorder(){
   if(bimg.dataset.src!==src){ bimg.dataset.src=src; bimg.src=src; }
   bimg.style.left=ox+'px'; bimg.style.top=oy+'px';
   bimg.style.width=(tw*F)+'px'; bimg.style.height=(th*F)+'px';
-  // Pin the frame art dead-centre in the stage: flex centres the PAGE, so a
-  // page resize would otherwise drag the art along — counter-shift the whole
-  // #frame so the art never moves and only the notes slide/scale under it.
-  const ca=$('#canvasArea'), fr=$('#frame');
-  fr.style.transform='';
-  const un=fr.getBoundingClientRect(), car=ca.getBoundingClientRect();
-  const dx=(car.x+(ca.clientWidth-tw*F)/2)-(un.x+ox);
-  const dy=(car.y+(ca.clientHeight-th*F)/2)-(un.y+oy);
-  fr.style.transform=`translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px)`;
+  // Pin the frame art dead-centre in the stage: the wrapper IS the art's box
+  // (so its size never changes when the page behind it is resized), and #frame
+  // hangs off it at -ox/-oy so the art lands exactly at the wrapper's origin.
+  // Centring is then plain margin:auto — which, unlike a transform, keeps the
+  // whole thing reachable by scrolling in every direction when zoomed in.
+  pinFrame(ox, oy, tw*F, th*F);
   // White bars = the space the export adds around the content in the slot
   // (slightly padded outward so the slot's soft edge never shows the page).
   const bg=cfg.background_color||[255,255,255];
@@ -3719,15 +3741,26 @@ window.addEventListener('resize',()=>{ if(curPage()) drawCrop(); });
 
 // ---- centre-page zoom ---------------------------------------------------
 function setPageZoom(v){
-  pageZoom=Math.min(2, Math.max(0.1, v));
+  const ca=$('#canvasArea'), before=pageZoom;
+  // keep whatever is in the middle of the viewport in the middle after the
+  // resize, so zooming in past ~200% doesn't dump you at the top-left corner
+  const ax=(ca.scrollLeft+ca.clientWidth/2)/Math.max(1,ca.scrollWidth);
+  const ay=(ca.scrollTop+ca.clientHeight/2)/Math.max(1,ca.scrollHeight);
+  pageZoom=Math.min(5, Math.max(0.1, v));
   const pc=Math.round(pageZoom*100);
   $('#pageZoom').value=pc;
   $('#vPageZoom').textContent=pc+'%';
   if(curPage()) drawCrop();
+  if(pageZoom!==before){
+    ca.scrollLeft=ax*ca.scrollWidth-ca.clientWidth/2;
+    ca.scrollTop=ay*ca.scrollHeight-ca.clientHeight/2;
+  }
 }
 $('#pageZoom').addEventListener('input',e=>setPageZoom(parseInt(e.target.value,10)/100));
-$('#pzOut').onclick=()=>setPageZoom(pageZoom-0.1);
-$('#pzIn').onclick=()=>setPageZoom(pageZoom+0.1);
+// coarser steps past 2x so the buttons still get you to 500% in a few clicks
+const zStep=z=>z>=2?0.5:0.1;
+$('#pzOut').onclick=()=>setPageZoom(pageZoom-zStep(pageZoom-0.01));
+$('#pzIn').onclick=()=>setPageZoom(pageZoom+zStep(pageZoom));
 $('#vPageZoom').ondblclick=()=>setPageZoom(1);
 // Ctrl/Cmd + wheel over the page zooms too
 $('#canvasArea').addEventListener('wheel',e=>{
