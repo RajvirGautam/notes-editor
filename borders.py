@@ -272,6 +272,14 @@ def _clampf(v, lo=0.2, hi=4.0, dflt=1.0) -> float:
         return dflt
 
 
+def _clampa(v) -> float:
+    """Content alignment in the slot: -1 (top/left) .. 0 (centred) .. 1."""
+    try:
+        return min(1.0, max(-1.0, float(v)))
+    except (TypeError, ValueError):
+        return 0.0
+
+
 # "fill" mode stretches at most this much toward the slot's shape — enough to
 # absorb small aspect mismatches invisibly; anything beyond is cover-cropped.
 FILL_MAX_STRETCH = 1.15
@@ -305,16 +313,20 @@ def compose_bordered(content: Image.Image, tpl: Image.Image, cfg: dict,
                      zoom: float = 1.0,
                      stretch_w: float = 1.0,
                      stretch_h: float = 1.0,
-                     fit_mode: str = "page") -> Image.Image:
+                     fit_mode: str = "page",
+                     align_x: float = 0.0,
+                     align_y: float = 0.0) -> Image.Image:
     """
     Put `content` (the processed, cropped page) behind the border frame.
 
     The frame keeps its native size — every output page is exactly
     `template_size`. `fit_mode` picks how the page meets the slot (see
     fit_scales); slack is padded in the page's own paper tone and overflow
-    is cropped under the frame, always centred. `zoom` multiplies the fit
-    uniformly and `stretch_w`/`stretch_h` scale each axis independently on
-    top. The template's transparent slot shows the content through it; the
+    is cropped under the frame. `zoom` multiplies the fit uniformly and
+    `stretch_w`/`stretch_h` scale each axis independently on top.
+    `align_x`/`align_y` place the content inside the slot (-1 = top/left
+    edge, 0 = centred, 1 = bottom/right edge — the editor's Move tab).
+    The template's transparent slot shows the content through it; the
     header goes on top.
     """
     slot = cfg["slot"]
@@ -330,8 +342,10 @@ def compose_bordered(content: Image.Image, tpl: Image.Image, cfg: dict,
     nh = max(1, round(content.height * ky * zoom * stretch_h))
     fitted = content.convert("RGB").resize((nw, nh), Image.LANCZOS)
     pane = Image.new("RGB", (slot["w"], slot["h"]), _paper_color(content))
-    # centred paste; PIL clips whatever the zoom pushes past the pane edges
-    pane.paste(fitted, ((slot["w"] - nw) // 2, (slot["h"] - nh) // 2))
+    # aligned paste (centred by default); PIL clips whatever the zoom or the
+    # alignment pushes past the pane edges
+    pane.paste(fitted, (round((slot["w"] - nw) / 2 * (1.0 + _clampa(align_x))),
+                        round((slot["h"] - nh) / 2 * (1.0 + _clampa(align_y)))))
     canvas.paste(pane, (slot["x"], slot["y"]))
 
     canvas = Image.alpha_composite(canvas, tpl)

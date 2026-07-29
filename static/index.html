@@ -159,6 +159,7 @@
   .sec[data-sec=rotate] h3::before{content:'🔄'}
   .sec[data-sec=tilt] h3::before{content:'📐'}
   .sec[data-sec=crop] h3::before{content:'✂️'}
+  .sec[data-sec=move] h3::before{content:'↕️'}
   .sec[data-sec=sample] h3::before{content:'🎨'}
   .sec[data-sec=scan] h3::before{content:'🖌️'}
   .sec[data-sec=watermark] h3::before{content:'🛡️'}
@@ -238,6 +239,8 @@
   #shapeLayer .mid{fill:#8b5cf6;stroke:#fff;stroke-width:1;opacity:.6;cursor:copy;pointer-events:auto}
   #shapeLayer .mid:hover{opacity:1}
   #shapeLayer .draft-line{stroke:#8b5cf6;stroke-width:1.5;stroke-dasharray:5 4;pointer-events:none}
+  #shapeLayer .draft-prev{stroke:#8b5cf6;stroke-width:1.5;stroke-dasharray:5 4;pointer-events:none}
+  #shapeLayer .draft-prev.faint{opacity:.35}
   #shapeLayer .v0{fill:#34d399;stroke:#fff;stroke-width:2;pointer-events:auto;cursor:pointer}
   #frame.before #shapeLayer,#frame.deleted #shapeLayer{display:none}
   #frame.magic-mode #shapeLayer *{pointer-events:none}
@@ -287,6 +290,11 @@
   #frame.before #borderLayer,#frame.deleted #borderLayer{display:none!important}
   /* bordered mode sizes the page explicitly (frame stays fixed on screen) */
   #frame.bordered #pageImg{max-width:none;max-height:none}
+  /* move-in-frame: the page can be dragged around inside the frame's window */
+  #frame.bordered #pageImg{cursor:grab}
+  #frame.bordered.moving #pageImg{cursor:grabbing}
+  #frame.magic-mode #pageImg,#frame.shape-draw #pageImg,
+  #frame.shape-pick #pageImg{cursor:crosshair!important}
   /* history (saved drafts) modal */
   #histOverlay{position:fixed;inset:0;background:rgba(10,11,18,.66);z-index:60;
     display:flex;align-items:flex-start;justify-content:center;padding:60px 20px}
@@ -543,6 +551,29 @@
       </div>
     </div>
 
+    <div class="sec" data-sec="move">
+      <h3>Move</h3>
+      <div class="secbody">
+        <div id="mvHint" class="muted" style="margin-bottom:8px"></div>
+        <div class="btnrow" style="margin-bottom:8px">
+          <button id="mvTop" style="flex:1">⬆ Top</button>
+          <button id="mvCenter" style="flex:1">⊙ Center</button>
+          <button id="mvBottom" style="flex:1">⬇ Bottom</button>
+        </div>
+        <div class="crow"><span>Vertical</span><span id="vMvY" class="unit">center</span>
+          <input type="range" id="mvY" min="-100" max="100" step="1" value="0"/></div>
+        <div class="crow"><span>Horizontal</span><span id="vMvX" class="unit">center</span>
+          <input type="range" id="mvX" min="-100" max="100" step="1" value="0"/></div>
+        <div class="btnrow" style="margin-bottom:8px">
+          <button id="mvReset" style="flex:1">Reset (center)</button>
+        </div>
+        <div class="btnrow">
+          <button id="mvApplyAll" style="flex:1">Position → all pages</button>
+          <button id="mvApplyRemaining" style="flex:1">Position → remaining</button>
+        </div>
+      </div>
+    </div>
+
     <div class="sec" id="sampleSec" data-sec="sample">
       <h3>Match a colour sample</h3>
       <div class="secbody">
@@ -602,9 +633,13 @@
         </div>
         <div class="btnrow" style="margin-bottom:6px">
           <button id="wmScopeAll" class="toggle active" style="flex:1"
-            title="The Watermark button stamps every page at once">All pages</button>
+            title="The toggle and sliders control the watermark on every page at once">All pages</button>
           <button id="wmScopePage" class="toggle" style="flex:1"
-            title="The Watermark button stamps only the page you’re on — pick pages one by one">Specific pages</button>
+            title="Override the watermark just for the page you’re viewing — turn it on/off or tweak its settings without touching the other pages">This page only</button>
+        </div>
+        <div class="btnrow" id="wmPageClearRow" style="display:none;margin-bottom:6px">
+          <button id="wmPageClear" style="flex:1"
+            title="Remove this page’s override so it follows the All-pages watermark again">↩ This page: follow all-pages settings</button>
         </div>
         <div class="btnrow" style="margin-bottom:6px">
           <button id="wmCenterBtn" class="toggle active" style="flex:1"
@@ -626,9 +661,11 @@
         <div class="btnrow" style="margin-bottom:8px">
           <button id="wmReset">Reset position &amp; size</button>
         </div>
-        <div class="muted">Overlays the Arivihan watermark (preview &amp; export). In
-          All-pages mode the button stamps every page at once; in Specific-pages
-          mode it turns the watermark on/off for just the page you’re viewing.
+        <div class="muted">Overlays the Arivihan watermark (preview &amp; export).
+          All-pages mode controls every page at once; This-page-only mode
+          overrides it for just the page you’re viewing — turn it on/off or
+          tweak the sliders there and only that page changes. Overridden pages
+          ignore the all-pages settings until you clear the override.
           Size 100% covers the page; shrink it and drag X/Y to place a stamp.</div>
       </div>
     </div>
@@ -726,7 +763,9 @@ const $ = s => document.querySelector(s);
 const DEF_COLOR = {mode:'none', brightness:1, contrast:1, saturation:1, whiten:0, deyellow:0, filter:'none'};
 const AUTO_SCAN = {mode:'none', brightness:1.02, contrast:1.12, saturation:1.55, whiten:0.8, deyellow:0.85, filter:'vivid'};
 // Per-page border fit: how the page meets the frame's window.
-const DEF_BFIT = {mode:'width', zoom:1, stretchW:1, stretchH:1};
+// ox/oy: where the cropped content sits inside the frame's window, as an
+// alignment from -1 (top/left edge) through 0 (centred) to 1 (bottom/right).
+const DEF_BFIT = {mode:'width', zoom:1, stretchW:1, stretchH:1, ox:0, oy:0};
 const state = {
   job:null, files:[], fi:0, pi:0,   // current file/page index
   before:false,                     // global before/after view toggle
@@ -743,7 +782,9 @@ const state = {
   // global branding overlay. scale: 1==covers the anchor rect;
   // dx/dy: centre offset as a fraction of that rect's W/H; rotate in degrees.
   // centerMargins: anchor to the page's crop margins instead of the whole sheet.
-  // scope: 'all' stamps every page; 'page' stamps only pages with p.wm set.
+  // scope: 'all' = the toggle/sliders edit these global settings; 'page' =
+  // they edit a per-page override (p.wmo) for the page on screen. A page
+  // with p.wmo set ignores the global on/off and sliders entirely.
   watermark:{on:false, scope:'all', opacity:1, scale:1.3, rotate:0, dx:0, dy:0, centerMargins:true},
   // branded border frames (all pages): class picks the asset set, board+stream
   // picks the optional cover page, number+name feed the chapter header.
@@ -802,7 +843,7 @@ function snapshot(){
         overlays:(p.overlays||[]).map(o=>({...o})),
         shapes:copyShapes(p.shapes),
         color:{...p.color}, bfit:{...(p.bfit||DEF_BFIT)}, deleted:!!p.deleted,
-        wm:!!p.wm}))
+        wmo:p.wmo?{...p.wmo}:null}))
     })),
     watermark: {...state.watermark},
     borders: {...state.borders},
@@ -860,7 +901,7 @@ function applySnapshot(str){
       p.shapes = copyShapes(sp.shapes);
       p.bfit = {...DEF_BFIT, ...(sp.bfit||legacyBfit||{})};
       p.deleted = !!sp.deleted;
-      p.wm = !!sp.wm;
+      p.wmo = sp.wmo ? {...sp.wmo} : null;
     });
   });
   state.watermark = {scope:'all', ...s.watermark};   // old snapshots lack scope
@@ -921,7 +962,7 @@ function ingest(data){
     // the right PDF page.
     f.pages=f.pages.map((p,i)=>({src:i, angle:p.angle, rotate:0, crop:{...p.crop}, removals: p.removals ? [...p.removals] : [],
       overlays:[], shapes:[],
-      color:{...DEF_COLOR}, bfit:{...DEF_BFIT}, deleted:false, wm:false, w:p.w, h:p.h}));
+      color:{...DEF_COLOR}, bfit:{...DEF_BFIT}, deleted:false, wmo:null, w:p.w, h:p.h}));
   });
   state.files=data.files;
   state.fi=0; state.pi=0;
@@ -1198,11 +1239,11 @@ function colorQuery(c){
 // the server can anchor the overlay to the margins even on the main preview,
 // which renders the page *uncropped* (the guides are drawn over it).
 function wmQuery(p){
-  const w=state.watermark;
   if(!wmEffOn(p)) return '';
+  const e=wmParams(p), cm=state.watermark.centerMargins;
   const c=(p&&p.crop)||{left:0,top:0,right:0,bottom:0};
-  return `&wm=1&wmop=${w.opacity}&wmscale=${w.scale}&wmrot=${w.rotate}`
-    +`&wmdx=${w.dx}&wmdy=${w.dy}&wmcm=${w.centerMargins?1:0}`
+  return `&wm=1&wmop=${e.opacity}&wmscale=${e.scale}&wmrot=${e.rotate}`
+    +`&wmdx=${e.dx}&wmdy=${e.dy}&wmcm=${cm?1:0}`
     +`&wcl=${c.left}&wct=${c.top}&wcr=${c.right}&wcb=${c.bottom}`;
 }
 function refreshPreview(){
@@ -1786,6 +1827,26 @@ function drawShapes(){
     });
   }
 }
+// Live preview while placing polygon points: a dashed line from the last
+// placed point to the cursor, plus a fainter closing line back to the start
+// so you can see the shape that would form. Pass null to clear it.
+function draftPreview(fx,fy){
+  const layer=$('#shapeLayer'); if(!layer) return;
+  layer.querySelectorAll('.draft-prev').forEach(e=>e.remove());
+  if(fx==null||!state.shapeDraw||!state.shapeDraft.length) return;
+  const img=$('#pageImg');
+  const W=img.clientWidth, H=img.clientHeight;
+  if(!W||!H) return;
+  const d=state.shapeDraft;
+  const first=d[0], last=d[d.length-1];
+  // snap to the green start point when close enough to close the polygon
+  if(d.length>=3 && Math.hypot((fx-first[0])*W,(fy-first[1])*H)<12){ fx=first[0]; fy=first[1]; }
+  layer.appendChild(svgEl('polyline',{fill:'none','class':'draft-prev',
+    points:`${last[0]*W},${last[1]*H} ${fx*W},${fy*H}`}));
+  if(d.length>=2 && !(fx===first[0]&&fy===first[1]))
+    layer.appendChild(svgEl('polyline',{fill:'none','class':'draft-prev faint',
+      points:`${fx*W},${fy*H} ${first[0]*W},${first[1]*H}`}));
+}
 function shapeChanged(soon){
   syncEditState();
   if(soon){ refreshThumbSoon(state.fi,state.pi); commitSoon(); }
@@ -1977,7 +2038,15 @@ $('#frame').addEventListener('pointerdown',ev=>{
      &&Math.hypot((fx-d0[0])*r.width,(fy-d0[1])*r.height)<12){ finishDraft(); return; }
   state.shapeDraft.push([fx,fy]);
   drawShapes();
+  draftPreview(fx,fy);
 });
+$('#frame').addEventListener('pointermove',ev=>{
+  if(!state.shapeDraw||!state.shapeDraft.length||state.before) return;
+  const r=$('#pageImg').getBoundingClientRect();
+  draftPreview(Math.max(0,Math.min(1,(ev.clientX-r.left)/r.width)),
+               Math.max(0,Math.min(1,(ev.clientY-r.top)/r.height)));
+});
+$('#frame').addEventListener('pointerleave',()=>draftPreview(null));
 document.addEventListener('keydown',e=>{
   if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)) return;
   if(e.key==='Escape'){
@@ -2241,37 +2310,55 @@ function setBefore(on){
 $('#beforeBtn').onclick=()=>setBefore(!state.before);
 
 // ---- watermark (branding overlay) ---------------------------------------
-// Scope 'all': one on/off switch stamps every page (state.watermark.on).
-// Scope 'page': the same button toggles p.wm for the page being viewed, so
-// only explicitly stamped pages carry the watermark.
+// Scope 'all': the toggle & sliders edit the global settings (state.watermark)
+// and every page follows them. Scope 'page' ("This page only"): they edit a
+// per-page override (p.wmo — its own on/off + opacity/scale/rotate/dx/dy) for
+// the page on screen; an overridden page ignores the global switch & sliders
+// entirely, in either scope, until the override is cleared.
 function wmEffOn(p){
-  const w=state.watermark;
-  return w.scope==='page' ? !!(p&&p.wm) : w.on;
+  return (p&&p.wmo) ? !!p.wmo.on : state.watermark.on;
+}
+// Effective slider params for a page: its override if it has one, else global.
+function wmParams(p){
+  return (p&&p.wmo) ? p.wmo : state.watermark;
 }
 function wmAnyOn(){
+  return state.watermark.on || state.files.some(f=>f.pages.some(p=>p.wmo&&p.wmo.on));
+}
+// The object the toggle & sliders currently edit. In this-page-only scope the
+// page gets an override on first touch, seeded from what it shows right now.
+function wmTarget(){
   const w=state.watermark;
-  return w.scope==='page' ? state.files.some(f=>f.pages.some(p=>p.wm)) : w.on;
+  if(w.scope!=='page') return w;
+  const p=curPage(); if(!p) return w;
+  if(!p.wmo) p.wmo={on:wmEffOn(p), opacity:w.opacity, scale:w.scale,
+                    rotate:w.rotate, dx:w.dx, dy:w.dy};
+  return p.wmo;
 }
 function syncWatermarkBtn(){
-  const w=state.watermark;
+  const w=state.watermark, p=curPage();
   const b=$('#wmToggle');
-  const eff=wmEffOn(curPage());
-  b.classList.toggle('active',eff);
+  const eff=wmEffOn(p);
+  b.classList.toggle('active', w.scope==='page' ? eff : w.on);
   b.textContent = w.scope==='page'
     ? (eff ? '🏷 Watermark (this page): On' : '🏷 Watermark (this page): Off')
     : (w.on ? '🏷 Watermark: On' : '🏷 Watermark: Off');
   $('#wmBadge').style.display = wmAnyOn() ? '' : 'none';
-  // keep the sliders in step with state (e.g. after undo/redo/reset)
-  $('#wmOpacity').value=Math.round(w.opacity*100);
-  $('#vWmOp').textContent=Math.round(w.opacity*100)+'%';
-  $('#wmScale').value=Math.round(w.scale*100);
-  $('#vWmScale').textContent=Math.round(w.scale*100)+'%';
-  $('#wmRotate').value=Math.round(w.rotate);
-  $('#vWmRot').textContent=Math.round(w.rotate)+'°';
-  $('#wmDx').value=Math.round(w.dx*100);
-  $('#vWmDx').textContent=Math.round(w.dx*100)+'%';
-  $('#wmDy').value=Math.round(w.dy*100);
-  $('#vWmDy').textContent=Math.round(w.dy*100)+'%';
+  // an overridden page offers a one-click way back to the global settings
+  $('#wmPageClearRow').style.display = (p&&p.wmo) ? '' : 'none';
+  // keep the sliders in step with state (e.g. after undo/redo/reset). In
+  // this-page-only scope they mirror the page on screen (its override if any).
+  const s = w.scope==='page' ? wmParams(p) : w;
+  $('#wmOpacity').value=Math.round(s.opacity*100);
+  $('#vWmOp').textContent=Math.round(s.opacity*100)+'%';
+  $('#wmScale').value=Math.round(s.scale*100);
+  $('#vWmScale').textContent=Math.round(s.scale*100)+'%';
+  $('#wmRotate').value=Math.round(s.rotate);
+  $('#vWmRot').textContent=Math.round(s.rotate)+'°';
+  $('#wmDx').value=Math.round(s.dx*100);
+  $('#vWmDx').textContent=Math.round(s.dx*100)+'%';
+  $('#wmDy').value=Math.round(s.dy*100);
+  $('#vWmDy').textContent=Math.round(s.dy*100)+'%';
   $('#wmScopeAll').classList.toggle('active', w.scope!=='page');
   $('#wmScopePage').classList.toggle('active', w.scope==='page');
   const cb=$('#wmCenterBtn');
@@ -2282,13 +2369,15 @@ function syncWatermarkBtn(){
     ? 'Sitting in the middle of each page’s crop margins — it follows the guides live. Size is unchanged; use Size / scale for that.'
     : 'Centred on the whole sheet. Turn on to sit it in the middle of the crop margins instead — same size, it just moves, and it follows the guides live.';
 }
-// In 'page' scope the toggle only touches the page on screen; in 'all' scope
-// it flips the global switch for every page, as before.
+// In 'page' scope the toggle only touches the page on screen (creating its
+// override on first use); in 'all' scope it flips the global switch, which
+// every non-overridden page follows.
 $('#wmToggle').onclick=()=>{
   const w=state.watermark;
   if(w.scope==='page'){
     const p=curPage(); if(!p){ toast('Load a PDF first'); return; }
-    p.wm=!p.wm;
+    const t=wmTarget();
+    t.on=!t.on;
     syncWatermarkBtn();
     if(state.before) setBefore(false);
     refreshThumb(state.fi,state.pi); refreshPreview(); commit();
@@ -2299,19 +2388,26 @@ $('#wmToggle').onclick=()=>{
   if(state.before) setBefore(false);   // watermark isn't shown on the original
   refreshAllThumbs(); refreshPreview(); commit();
 };
-// Scope: every page at once, or page-by-page via the same toggle.
+// Scope: edit every page at once, or override just the page on screen.
 function setWmScope(scope){
   if(state.watermark.scope===scope) return;
   state.watermark.scope=scope;
   syncWatermarkBtn();
-  if(state.before) setBefore(false);
-  refreshAllThumbs(); refreshPreview();
   if(scope==='page')
-    toast('Specific-pages mode: the Watermark button now stamps only the page you’re viewing');
+    toast('This-page-only mode: the toggle & sliders now override the watermark for just the page you’re viewing');
   commit();
 }
 $('#wmScopeAll').onclick=()=>setWmScope('all');
 $('#wmScopePage').onclick=()=>setWmScope('page');
+// Drop the current page's override so it follows the all-pages settings again.
+$('#wmPageClear').onclick=()=>{
+  const p=curPage(); if(!p||!p.wmo) return;
+  p.wmo=null;
+  syncWatermarkBtn();
+  if(state.before) setBefore(false);
+  refreshThumb(state.fi,state.pi); refreshPreview(); commit();
+  toast('Override cleared — this page follows the all-pages watermark again');
+};
 // Anchor the overlay to the crop margins instead of the whole sheet. Both the
 // preview and the export use the same anchor, so what you see is what exports.
 $('#wmCenterBtn').onclick=()=>{
@@ -2327,40 +2423,51 @@ $('#wmCenterBtn').onclick=()=>{
 };
 // Any watermark tweak: live-update the main preview, debounce the thumbnails
 // (expensive to re-render for every page), and coalesce into one undo step.
+// In this-page-only scope the tweak touches one page, so only its thumbnail
+// re-renders; in all-pages scope every thumbnail can be affected.
 let wmTimer=null;
 function wmChanged(){
-  if(!wmAnyOn()) return;
+  const pageScope=state.watermark.scope==='page', p=curPage();
+  // the first tweak in this-page-only scope creates the override — surface
+  // the "follow all-pages settings" button without re-syncing the sliders
+  $('#wmPageClearRow').style.display=(p&&p.wmo)?'':'none';
+  if(pageScope ? !wmEffOn(p) : !wmAnyOn()){ commitSoon(); return; }
   if(state.before) setBefore(false);
   refreshPreviewDebounced();
   clearTimeout(wmTimer);
-  wmTimer=setTimeout(refreshAllThumbs,260);
+  const fi=state.fi, pi=state.pi;
+  wmTimer=setTimeout(()=>pageScope?refreshThumb(fi,pi):refreshAllThumbs(),260);
   commitSoon();
 }
 $('#wmOpacity').addEventListener('input',e=>{
-  state.watermark.opacity=parseInt(e.target.value)/100;
+  wmTarget().opacity=parseInt(e.target.value)/100;
   $('#vWmOp').textContent=e.target.value+'%'; wmChanged();
 });
 $('#wmScale').addEventListener('input',e=>{
-  state.watermark.scale=parseInt(e.target.value)/100;
+  wmTarget().scale=parseInt(e.target.value)/100;
   $('#vWmScale').textContent=e.target.value+'%'; wmChanged();
 });
 $('#wmRotate').addEventListener('input',e=>{
-  state.watermark.rotate=parseInt(e.target.value);
+  wmTarget().rotate=parseInt(e.target.value);
   $('#vWmRot').textContent=e.target.value+'°'; wmChanged();
 });
 $('#wmDx').addEventListener('input',e=>{
-  state.watermark.dx=parseInt(e.target.value)/100;
+  wmTarget().dx=parseInt(e.target.value)/100;
   $('#vWmDx').textContent=e.target.value+'%'; wmChanged();
 });
 $('#wmDy').addEventListener('input',e=>{
-  state.watermark.dy=parseInt(e.target.value)/100;
+  wmTarget().dy=parseInt(e.target.value)/100;
   $('#vWmDy').textContent=e.target.value+'%'; wmChanged();
 });
 $('#wmReset').onclick=()=>{
-  Object.assign(state.watermark,{scale:1.3,rotate:0,dx:0,dy:0});
+  Object.assign(wmTarget(),{scale:1.3,rotate:0,dx:0,dy:0});
   syncWatermarkBtn();
-  if(wmAnyOn()){ if(state.before) setBefore(false);
-    refreshAllThumbs(); refreshPreview(); }
+  const pageScope=state.watermark.scope==='page';
+  if(pageScope ? wmEffOn(curPage()) : wmAnyOn()){
+    if(state.before) setBefore(false);
+    if(pageScope) refreshThumb(state.fi,state.pi); else refreshAllThumbs();
+    refreshPreview();
+  }
   commit();
 };
 
@@ -2559,7 +2666,7 @@ $('#pyqAppendBtn').onclick=async()=>{
     data.pages.forEach((p,j)=>{
       f.auto.push({angle:p.angle,crop:{...p.crop}});
       f.pages.push({src:data.start+j,angle:p.angle,rotate:0,crop:{...p.crop},removals:[],overlays:[],shapes:[],
-        color:{...DEF_COLOR},bfit:{...DEF_BFIT},deleted:false,wm:false,w:p.w,h:p.h});
+        color:{...DEF_COLOR},bfit:{...DEF_BFIT},deleted:false,wmo:null,w:p.w,h:p.h});
     });
     f.npages=data.npages;
     state.pi=data.start;                 // jump to the first appended page
@@ -2609,6 +2716,9 @@ function escapeHtml(s){
 }
 let borderGuideDrag=false;    // guides being dragged -> freeze the layout
 let pageZoom=1;               // centre-page zoom factor (0.1 – 2)
+// Slack per axis (display px) between the content box and the frame's window —
+// stashed by drawBorder so the Move drag can convert pixels to alignment.
+let moveSlack={x:0,y:0};
 // Constant on-screen scale for the frame: fit it inside the visible stage.
 // Depends only on the stage size and the template, never on the page.
 function borderFrameScale(meta){
@@ -2677,8 +2787,13 @@ function drawBorder(){
   const W=boxW/kw, H=boxH/kh;                         // page display size
   img.style.width=W+'px'; img.style.height=H+'px';
   const box={x:c.left*W, y:c.top*H, w:boxW, h:boxH};
-  // slot centre locks onto the crop-box centre (content is centred in it)
-  const sxp=box.x+box.w/2-slw/2, syp=box.y+box.h/2-slh/2;
+  // Content placement in the slot: the Move tab's alignment slides it between
+  // the slot's edges (-1 top/left, 0 centred, 1 bottom/right) — same maths as
+  // the server's compose_bordered paste offset.
+  const alx=Math.max(-1,Math.min(1,bf.ox||0));
+  const aly=Math.max(-1,Math.min(1,bf.oy||0));
+  moveSlack={x:(slw-boxW)/2, y:(slh-boxH)/2};         // px of travel per unit
+  const sxp=box.x-moveSlack.x*(1+alx), syp=box.y-moveSlack.y*(1+aly);
   const ox=sxp-slot.x*F, oy=syp-slot.y*F;             // template origin
   const bimg=$('#borderImg');
   const src=`/api/borders/template?class=${encodeURIComponent(state.borders.cls)}`
@@ -2825,6 +2940,7 @@ function syncBordersUI(){
   $('#bdStH').value=hpc; $('#vBdStH').textContent=hpc+'%';
   document.querySelectorAll('#bdFitChips .chip').forEach(chp=>
     chp.classList.toggle('active', chp.dataset.bdfit===(bf.mode||'page')));
+  syncMoveUI();
   const info=$('#bdInfo');
   if(!meta){ info.textContent='No border assets found on the server (borders/ folder).'; return; }
   if(!meta.template_count){
@@ -2905,6 +3021,95 @@ $('#bdNum').addEventListener('input',e=>{
 $('#bdName').addEventListener('input',e=>{
   state.borders.name=e.target.value; drawBorder(); commitSoon();
 });
+
+// ---- Move (position the selected content inside the border frame) ---------
+// The crop guides pick WHAT exports; this tab picks WHERE that content sits
+// in the frame's window. Stored per page in p.bfit.ox/oy as an alignment
+// (-1 = top/left edge, 0 = centred, 1 = bottom/right edge), so Top/Bottom
+// stay pinned to the window even if the crop, zoom or fit changes later.
+// The export composites with identical maths server-side.
+function mvFmtY(v){ return !v ? 'center' : Math.abs(Math.round(v*100))+'% '+(v<0?'up':'down'); }
+function mvFmtX(v){ return !v ? 'center' : Math.abs(Math.round(v*100))+'% '+(v<0?'left':'right'); }
+function syncMoveUI(){
+  const bf=(curPage()&&curPage().bfit)||DEF_BFIT;
+  $('#mvY').value=Math.round((bf.oy||0)*100);
+  $('#vMvY').textContent=mvFmtY(bf.oy||0);
+  $('#mvX').value=Math.round((bf.ox||0)*100);
+  $('#vMvX').textContent=mvFmtX(bf.ox||0);
+  $('#mvHint').textContent = state.borders.on
+    ? 'Slides the selected (cropped) content inside the border frame’s window — drag the page right on the canvas, or use the buttons & sliders. Per page; copy it with the buttons below.'
+    : 'Works with 🖼 Borders: turn them on and this moves the selected content inside the frame — top, bottom, centre or anywhere between (drag the page or use the sliders).';
+}
+let mvWarnTs=0;
+function moveReady(){
+  const p=curPage();
+  if(!p){ toast('Load a PDF first'); return null; }
+  const meta=borderMeta();
+  if(!state.borders.on||!meta||!meta.template_count){
+    if(Date.now()-mvWarnTs>2500){ mvWarnTs=Date.now();
+      toast('Turn on 🖼 Borders first — Move positions the selected content inside the frame'); }
+    return null;
+  }
+  return p;
+}
+function setMoveAlign(ox,oy,soon){
+  const p=moveReady(); if(!p){ syncMoveUI(); return; }
+  const bf=pageBfit(p);
+  if(ox!==null) bf.ox=Math.max(-1,Math.min(1,ox));
+  if(oy!==null) bf.oy=Math.max(-1,Math.min(1,oy));
+  syncMoveUI(); drawBorder();
+  if(soon) commitSoon(); else commit();
+}
+$('#mvTop').onclick=()=>setMoveAlign(null,-1);
+$('#mvCenter').onclick=()=>setMoveAlign(null,0);
+$('#mvBottom').onclick=()=>setMoveAlign(null,1);
+$('#mvReset').onclick=()=>setMoveAlign(0,0);
+$('#mvY').addEventListener('input',e=>setMoveAlign(null,parseInt(e.target.value,10)/100,true));
+$('#mvX').addEventListener('input',e=>setMoveAlign(parseInt(e.target.value,10)/100,null,true));
+function mvApply(remaining){
+  const pg=curPage(); if(!pg){ toast('Load a PDF first'); return; }
+  const src=pageBfit(pg);
+  const pages=applyTargets(remaining);
+  pages.forEach(p=>{ const bf=p.bfit||(p.bfit={...DEF_BFIT});
+    bf.ox=src.ox||0; bf.oy=src.oy||0; });
+  toast(`Position applied to ${pages.length} page${pages.length===1?'':'s'}`
+    +(remaining?' (this page → end)':''));
+  drawBorder(); commit();
+}
+$('#mvApplyAll').onclick=()=>mvApply(false);
+$('#mvApplyRemaining').onclick=()=>mvApply(true);
+// Drag & drop right on the canvas: any plain drag on the bordered page slides
+// the content inside the frame's window. Guides, overlays, shapes and the
+// other tools keep priority; pixel deltas convert to alignment via the slack
+// drawBorder stashed in moveSlack.
+(function initMoveDrag(){
+  $('#frame').addEventListener('pointerdown',ev=>{
+    if(!$('#frame').classList.contains('bordered')||state.before) return;
+    if(state.magicMode||state.shapeDraw||state.shapePick) return;
+    if(ev.target.closest('.guide,.ov-item,.removal-band')) return;
+    const p=curPage(); if(!p) return;
+    ev.preventDefault();
+    const bf=pageBfit(p);
+    const sx0=ev.clientX, sy0=ev.clientY, ox0=bf.ox||0, oy0=bf.oy||0;
+    let moved=false;
+    const move=e=>{
+      const dx=e.clientX-sx0, dy=e.clientY-sy0;
+      if(Math.abs(dx)+Math.abs(dy)>2){ moved=true; $('#frame').classList.add('moving'); }
+      if(Math.abs(moveSlack.x)>0.5) bf.ox=Math.max(-1,Math.min(1,ox0+dx/moveSlack.x));
+      if(Math.abs(moveSlack.y)>0.5) bf.oy=Math.max(-1,Math.min(1,oy0+dy/moveSlack.y));
+      syncMoveUI(); drawBorder();
+    };
+    const up=()=>{
+      document.removeEventListener('pointermove',move);
+      document.removeEventListener('pointerup',up);
+      $('#frame').classList.remove('moving');
+      if(moved) commit();
+    };
+    document.addEventListener('pointermove',move);
+    document.addEventListener('pointerup',up);
+  });
+})();
+
 (async function initBorders(){
   try{
     const r=await fetch('/api/borders/options');
@@ -2959,7 +3164,8 @@ function draftState(){
         removals:[...(p.removals||[])],
         overlays:(p.overlays||[]).map(o=>({...o})),
         shapes:copyShapes(p.shapes), color:{...p.color},
-        bfit:{...(p.bfit||DEF_BFIT)}, deleted:!!p.deleted, wm:!!p.wm}))})),
+        bfit:{...(p.bfit||DEF_BFIT)}, deleted:!!p.deleted,
+        wmo:p.wmo?{...p.wmo}:null}))})),
     watermark:{...state.watermark},
     borders:{...state.borders},
     palette: state.palette,
@@ -3073,6 +3279,17 @@ $('#histSaveBtn').onclick=async()=>{ if(await saveDraft(false)) renderHistory();
 
 // Lay a draft's saved edit state over a freshly rebuilt job.
 function applyDraftState(s){
+  // Old drafts stored per-page stamps as a bare `wm` flag with the global
+  // sliders shared ('page' scope). Migrate those to per-page overrides that
+  // freeze the params they were stamped with. New drafts always carry a
+  // `wmo` key on every page (even when null), which tells the formats apart.
+  const sw=s.watermark||{};
+  const isLegacy=(s.files||[]).some(sf=>(sf.pages||[])
+    .some(sp=>sp.wmo===undefined && sp.wm!==undefined));
+  const legacyStamp = (isLegacy && sw.scope==='page')
+    ? {on:true, opacity:sw.opacity??1, scale:sw.scale??1.3,
+       rotate:sw.rotate??0, dx:sw.dx??0, dy:sw.dy??0}
+    : null;
   (s.files||[]).forEach((sf,fi)=>{
     const f=state.files[fi]; if(!f) return;
     // restore the saved page order before laying the edits back on top
@@ -3085,11 +3302,16 @@ function applyDraftState(s){
       p.overlays=(sp.overlays||[]).map(o=>({...o}));
       p.shapes=copyShapes(sp.shapes);
       p.bfit={...DEF_BFIT, ...(sp.bfit||{})};
-      p.deleted=!!sp.deleted; p.wm=!!sp.wm;
+      p.deleted=!!sp.deleted;
+      p.wmo=sp.wmo ? {...sp.wmo}
+           : (sp.wm && legacyStamp) ? {...legacyStamp} : null;
     });
   });
   if(s.watermark) state.watermark={on:false, scope:'all', opacity:1, scale:1.3,
     rotate:0, dx:0, dy:0, centerMargins:true, ...s.watermark};
+  // in the old 'page' scope the global switch was ignored — the migrated
+  // overrides carry the stamps now, so keep the all-pages switch off
+  if(legacyStamp) state.watermark.on=false;
   if(s.borders){
     const sb=s.borders;
     state.borders={on:!!sb.on, cls:sb.cls||state.borders.cls, board:sb.board||'',
@@ -3131,11 +3353,12 @@ $('#exportBtn').onclick=async()=>{
       crop:p.crop,removals:p.removals,
       overlays:(p.overlays||[]).map(ovResolve).filter(Boolean),
       shapes:packShapes(p.shapes),
-      color:p.color,bfit:p.bfit||DEF_BFIT,deleted:!!p.deleted,wm:!!p.wm}))};
+      color:p.color,bfit:p.bfit||DEF_BFIT,deleted:!!p.deleted,
+      wmo:p.wmo?{...p.wmo}:null}))};
   });
   const w=state.watermark, bd=state.borders;
   const body={job:state.job,dpi:parseInt($('#dpi').value),settings,
-    watermark:wmAnyOn(), wmScope:w.scope,
+    watermark:w.on,
     wmOpacity:w.opacity, wmScale:w.scale, wmRotate:w.rotate,
     wmDx:w.dx, wmDy:w.dy, wmCenterMargins:w.centerMargins,
     borders:{on:bd.on, class:bd.cls, board:bd.board, stream:bd.stream,

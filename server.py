@@ -367,7 +367,10 @@ def export():
     dpi = int(data.get("dpi", DEFAULT_EXPORT_DPI))
     settings = data.get("settings", {})
     watermark = bool(data.get("watermark", False))
-    # 'all' stamps every page; 'page' stamps only pages whose settings carry wm.
+    # Global switch stamps every page; a page whose settings carry a "wmo"
+    # override ({on, opacity, scale, rotate, dx, dy}) uses that instead —
+    # its own on/off and its own parameters. Legacy clients sent wmScope
+    # 'page' + per-page "wm" flags; still honoured below.
     wm_scope = str(data.get("wmScope", "all") or "all")
     wm_opacity = float(data.get("wmOpacity", 1) or 1)
     wm_scale = float(data.get("wmScale", 1) or 1)
@@ -470,13 +473,27 @@ def export():
                         _render_overlay_src)
                 if ps.get("shapes"):
                     processed = imaging.draw_shapes(processed, ps["shapes"], crop)
-                if watermark and (wm_scope != "page" or ps.get("wm")):
+                wov = ps.get("wmo") or {}
+
+                def _wp(key, default):
+                    try:
+                        return float(wov[key])
+                    except (KeyError, TypeError, ValueError):
+                        return default
+
+                if wov:
+                    stamp = bool(wov.get("on"))
+                else:
+                    stamp = watermark and (wm_scope != "page" or ps.get("wm"))
+                if stamp:
                     sheet, centre = imaging.watermark_geometry(
                         processed.size, crop, wm_center_margins, cropped=True)
-                    processed = imaging.apply_watermark(processed, wm_opacity,
-                                                        wm_scale, wm_rotate,
-                                                        wm_dx, wm_dy, sheet, centre,
-                                                        align_ink=wm_center_margins)
+                    processed = imaging.apply_watermark(
+                        processed,
+                        _wp("opacity", wm_opacity), _wp("scale", wm_scale),
+                        _wp("rotate", wm_rotate), _wp("dx", wm_dx),
+                        _wp("dy", wm_dy), sheet, centre,
+                        align_ink=wm_center_margins)
                 if bd_on:
                     tpl = borders.load_template(btpls[tpl_i % len(btpls)])
                     tpl_i += 1
@@ -490,7 +507,9 @@ def export():
                         zoom=borders._clampf(pbf.get("zoom", bzoom)),
                         stretch_w=borders._clampf(pbf.get("stretchW", bstretch_w)),
                         stretch_h=borders._clampf(pbf.get("stretchH", bstretch_h)),
-                        fit_mode=pmode)
+                        fit_mode=pmode,
+                        align_x=borders._clampa(pbf.get("ox", 0)),
+                        align_y=borders._clampa(pbf.get("oy", 0)))
                 images.append(processed.convert("RGB"))
             doc.close()
 
