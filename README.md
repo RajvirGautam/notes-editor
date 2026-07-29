@@ -42,6 +42,9 @@ To use a specific Python: `PYTHON=python3.12 ./run.sh`
   like). The source page is deleted automatically (untick the checkbox to keep
   it, or restore it from its thumbnail). The block follows the source page's
   crop/tilt/colour live, and export + thumbnails composite it exactly as shown.
+  A block parked past the crop margins still exports in full — the sheet grows
+  outward (blank paper) to keep it, rather than clipping it at the margin. Use
+  *⤵ Fit inside the margins* if you'd rather keep the sheet at its trimmed size.
 - **Shape filler** — hide anything on a page under a filled free polygon:
   *🔷 Draw polygon*, click to place points, click the first (green) point or
   press Enter to close. Drag the white dots to move points; dragging a purple

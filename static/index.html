@@ -267,7 +267,12 @@
   .rem-item .rem-del-btn{background:transparent;border:none;color:#ff4757;cursor:pointer;padding:0 4px;font-size:14px;font-weight:bold}
   .rem-item .rem-del-btn:hover{color:#ff6b81}
   /* merge pages: content pulled from another page, draggable + resizable */
-  #ovLayer{position:absolute;inset:0;z-index:2;pointer-events:none}
+  /* Pulled content always paints above the border frame's art and its white
+     filler bars, selected or not, so it never disappears behind the frame.
+     Anything past the crop margins grows the exported sheet rather than being
+     clipped, and the marker below just says so. */
+  #ovLayer{position:absolute;inset:0;z-index:5;pointer-events:none}
+  #frame.ov-editing #ovLayer{z-index:6}
   #frame.before #ovLayer,#frame.deleted #ovLayer{display:none}
   #frame.magic-mode #ovLayer .ov-item{pointer-events:none}
   .ov-item{position:absolute;pointer-events:auto;cursor:grab;line-height:0;
@@ -285,6 +290,14 @@
   .ov-item .ov-handle{position:absolute;right:-8px;bottom:-8px;width:14px;height:14px;
     border-radius:4px;background:var(--acc);border:2px solid #fff;cursor:nwse-resize}
   .ov-item.selected{outline:2px solid var(--acc);outline-offset:1px}
+  /* Sticking out past the crop margins: exports in full — the sheet grows on
+     that side. Flagged in an informational tone, not a warning one. */
+  .ov-item.outside{outline:2px dashed #4fc3f7}
+  .ov-item.outside.selected{outline:2px solid #4fc3f7}
+  .ov-item .ov-warn{position:absolute;top:-26px;right:0;display:none;font-size:11px;
+    background:rgba(23,25,34,.9);color:#4fc3f7;padding:2px 7px;border-radius:4px;
+    font-weight:600;white-space:nowrap;line-height:1.2;pointer-events:none}
+  .ov-item.outside .ov-warn{display:block}
   .ov-item.selected .ov-tools{display:flex}
   .ov-item.stretched img{height:100%}
   .ov-item .ov-stretch{position:absolute;left:50%;bottom:-8px;margin-left:-7px;
@@ -482,6 +495,14 @@
       <h3>Pulled content <span class="badge" style="display:inline-block">selected</span></h3>
       <div class="secbody">
         <div id="ovEditInfo" class="muted" style="margin-bottom:8px"></div>
+        <div id="ovOutWarn" class="muted" style="display:none;color:#4fc3f7;margin-bottom:8px">
+          Part of this sits outside the crop margins, so the exported sheet
+          grows outward (blank paper) to keep all of it. Inside a border frame
+          that means the page sits a little smaller in the window. Fit it in to
+          keep the sheet at its trimmed size instead.</div>
+        <div class="btnrow" style="margin-bottom:8px">
+          <button id="ovFitBtn" style="flex:1">⤵ Fit inside the margins</button>
+        </div>
 
         <div class="crow"><span>Width</span><span id="vOvW" class="unit">50%</span>
           <input type="range" id="ovW" min="4" max="150" step="1"/></div>
@@ -869,6 +890,7 @@ const state = {
   shapePick:false,                  // shape filler: eyedropper (pick colour from page)
   shapeSel:-1,                      // index of the selected shape on this page
   shapeDraft:[],                    // points of the polygon being drawn
+  shapeDraftAt:null,                // {fi,pi} the draft's points were placed on
   shapeColor:'#ffffff',             // fill colour for the next polygon
   pendingGaps:[],                   // dragged-but-not-yet-removed bands (visible space)
   palette:null,                     // learned colour palette (global to job)
@@ -974,6 +996,9 @@ function flushCommit(){ if(commitTimer){ clearTimeout(commitTimer); commitTimer=
 
 function applySnapshot(str){
   const s = JSON.parse(str);
+  // undo/redo rewinds to a recorded state — a polygon still being drawn is not
+  // part of any of them, so it goes rather than being closed into one
+  state.shapeDraft=[]; state.shapeDraftAt=null;
   // old snapshots carried one global fit on state.borders — migrate it
   const sb0 = s.borders||{};
   const legacyBfit = (sb0.fitMode||sb0.zoom!==undefined)
@@ -1048,6 +1073,8 @@ function ingest(data){
   if(state.files.length && data.job!==state.job){ /* new job replaces */ }
   state.job=data.job;
   state.draftId=null;               // fresh upload = fresh draft on next export
+  // the old job's pages are gone — an unclosed polygon has nowhere to land
+  state.shapeDraft=[]; state.shapeDraftAt=null;
   // store auto (original) settings separately so "Auto" can reset
   data.files.forEach(f=>{
     f.auto=f.pages.map(p=>({angle:p.angle, crop:{...p.crop}}));
@@ -1075,7 +1102,7 @@ function ingest(data){
 function discardJob(){
   state.job=null; state.files=[]; state.fi=0; state.pi=0;
   state.draftId=null;
-  state.shapeSel=-1; state.shapeDraft=[];
+  state.shapeSel=-1; state.shapeDraft=[]; state.shapeDraftAt=null;
   if(state.shapeDraw) setShapeDraw(false);
   if(state.shapePick) setShapePick(false);
   state.before=false; state.palette=null; state.paletteVersion++;
@@ -1314,7 +1341,8 @@ let previewTimer=null;
 function loadPage(){
   const f=curFile(), p=curPage(); if(!p) return;
   state.pendingGaps = [];           // selections don't carry across pages
-  state.shapeSel=-1; state.shapeDraft=[];  // shape edits don't either
+  flushShapeDraft();                // an open polygon closes onto its own page
+  state.shapeSel=-1; state.shapeDraft=[]; state.shapeDraftAt=null;
   state.ovSel=-1;                   // neither does the pulled-content selection
   if(state.shapeDraw) setShapeDraw(false);
   if(state.shapePick) setShapePick(false);
@@ -1669,18 +1697,24 @@ function ovEff(o){
   return {angle:o.angle??sp.angle, rotate:o.rotate??(sp.rotate||0),
     crop:{...(o.crop||sp.crop)}, color:{...(o.color||sp.color)}};
 }
-function ovResolve(o){
+// `dest` is the page the overlay is pulled onto. Given it, the resolved item
+// always carries a height fraction (the stretch override, else the natural one)
+// — the server needs both dimensions to know how far the sheet has to grow for
+// content parked past the margins. Callers that only want the source image
+// (ovImgUrl) can leave it out; height plays no part in that render.
+function ovResolve(o, dest){
   const sf=state.files[o.sf]; if(!sf) return null;
   const sp=sf.pages[o.sp]; if(!sp) return null;
   const e=ovEff(o);
   const r={fid:sf.fid, page:sp.src??o.sp, angle:e.angle, rotate:e.rotate,
     crop:e.crop, removals:[...(sp.removals||[])], color:e.color,
     shapes:packShapes(sp.shapes), x:o.x, y:o.y, w:o.w};
-  if(o.h) r.h=o.h;
+  const h=o.h||(dest?ovHeightFrac(o,dest):0);
+  if(h) r.h=+h.toFixed(4);
   return r;
 }
 function ovQuery(p){
-  const list=(p.overlays||[]).map(ovResolve).filter(Boolean);
+  const list=(p.overlays||[]).map(o=>ovResolve(o,p)).filter(Boolean);
   if(!list.length) return '';
   return '&ov='+encodeURIComponent(JSON.stringify(list));
 }
@@ -1747,7 +1781,11 @@ function drawOverlays(){
     hd.title='Drag to resize';
     const sh=document.createElement('div'); sh.className='ov-stretch';
     sh.title='Drag to stretch the height';
-    it.appendChild(img); it.appendChild(tools); it.appendChild(hd); it.appendChild(sh);
+    const warn=document.createElement('span'); warn.className='ov-warn';
+    warn.textContent='past the margins — the sheet grows to keep it';
+    if(ovOutsideMargins(o,p)) it.classList.add('outside');
+    it.appendChild(img); it.appendChild(tools); it.appendChild(hd);
+    it.appendChild(sh); it.appendChild(warn);
     // drag to move (a plain click just selects it and opens its controls)
     it.addEventListener('pointerdown',ev=>{
       if(ev.target===hd||ev.target===sh||state.magicMode||state.before) return;
@@ -1762,13 +1800,16 @@ function drawOverlays(){
         o.x=Math.min(1.2,Math.max(-0.2, ox+(e.clientX-sx)/fr.width));
         o.y=Math.min(1.2,Math.max(-0.2, oy+(e.clientY-sy)/fr.height));
         it.style.left=(o.x*100)+'%'; it.style.top=(o.y*100)+'%';
+        it.classList.toggle('outside', ovOutsideMargins(o,p));
       };
       const up=()=>{
         document.removeEventListener('pointermove',move);
         document.removeEventListener('pointerup',up);
         ovDragging=false; it.classList.remove('dragging'); it.style.cursor='';
         syncOvPanel();
-        if(moved){ refreshThumb(state.fi,state.pi); commit(); }
+        // drawBorder last: moving pulled content past the margins resizes the
+        // sheet the frame fits, so the preview has to be refitted around it
+        if(moved){ drawBorder(); refreshThumb(state.fi,state.pi); commit(); }
       };
       document.addEventListener('pointermove',move);
       document.addEventListener('pointerup',up);
@@ -1786,12 +1827,14 @@ function drawOverlays(){
         it.style.width=(o.w*100)+'%';
         if(oh0){ o.h=Math.min(2,Math.max(0.02, oh0*o.w/ow));
                  it.style.height=(o.h*100)+'%'; }
+        it.classList.toggle('outside', ovOutsideMargins(o,p));
       };
       const up=()=>{
         document.removeEventListener('pointermove',move);
         document.removeEventListener('pointerup',up);
         ovDragging=false; it.classList.remove('dragging');
         syncOvPanel();
+        drawBorder();          // the sheet may have grown around it — refit
         refreshThumb(state.fi,state.pi); commit();
       };
       document.addEventListener('pointermove',move);
@@ -1807,12 +1850,14 @@ function drawOverlays(){
       const move=e=>{
         o.h=Math.min(2,Math.max(0.02, oh0+(e.clientY-sy)/fr.height));
         it.style.height=(o.h*100)+'%'; it.classList.add('stretched');
+        it.classList.toggle('outside', ovOutsideMargins(o,p));
       };
       const up=()=>{
         document.removeEventListener('pointermove',move);
         document.removeEventListener('pointerup',up);
         ovDragging=false; it.classList.remove('dragging');
         syncOvPanel();
+        drawBorder();          // the sheet may have grown around it — refit
         refreshThumb(state.fi,state.pi); commit();
       };
       document.addEventListener('pointermove',move);
@@ -1848,7 +1893,7 @@ function removeOverlay(idx){
   const p=curPage(); if(!p||!p.overlays) return;
   p.overlays.splice(idx,1);
   state.ovSel=-1;
-  drawOverlays();
+  drawOverlays(); drawBorder();     // sheet shrinks back if it had grown
   refreshThumb(state.fi,state.pi);
   commit();
   toast('Pulled content removed — restore the source page from its thumbnail if needed');
@@ -1861,6 +1906,58 @@ function removeOverlay(idx){
 // following its source page live.
 function ovSelObj(){
   const p=curPage(); return (p&&(p.overlays||[])[state.ovSel])||null;
+}
+// The page's crop insets grown outward until every pulled overlay is inside.
+// Pulled content is part of the page, so parking it past a margin grows the
+// sheet on that side (a negative inset) instead of clipping it away — the
+// added band exports as blank paper. Mirrors imaging.expanded_crop(); it is the
+// box the export and the thumbnails render, so the frame preview fits against
+// it too. The draggable guides keep showing the user's own p.crop.
+function effCrop(p){
+  const c=p.crop, list=(p&&p.overlays)||[];
+  let l=c.left, t=c.top, r=c.right, b=c.bottom;
+  list.forEach(o=>{
+    const hf=ovHeightFrac(o,p);
+    l=Math.min(l,o.x); t=Math.min(t,o.y);
+    r=Math.min(r,1-(o.x+o.w));
+    if(hf>0) b=Math.min(b,1-(o.y+hf));
+  });
+  return {left:l, top:t, right:r, bottom:b};
+}
+// Snap an overlay fully inside the destination's crop margins. Not needed for
+// it to export any more — just a quick way to keep the sheet at its trimmed
+// size instead of letting it grow around the pulled content.
+function ovFitIntoMargins(o, p){
+  const c=p.crop;
+  const availW=Math.max(0.05,1-c.left-c.right);
+  const availH=Math.max(0.05,1-c.top-c.bottom);
+  if(o.w>availW){ if(o.h) o.h*=availW/o.w; o.w=availW; }
+  let hf=ovHeightFrac(o,p);
+  if(hf>availH){
+    const k=availH/hf;
+    if(o.h) o.h*=k; else o.w*=k;
+    hf=availH;
+  }
+  o.x=Math.min(Math.max(o.x,c.left), 1-c.right-o.w);
+  o.y=Math.min(Math.max(o.y,c.top), Math.max(c.top,1-c.bottom-hf));
+}
+// True when any part of the overlay pokes past the crop margins — i.e. when it
+// is what's growing the sheet. Flagged so the size change isn't a surprise.
+function ovOutsideMargins(o, p){
+  const c=p.crop, hf=ovHeightFrac(o,p), t=0.002;
+  return o.x<c.left-t || o.y<c.top-t
+    || o.x+o.w>1-c.right+t || o.y+hf>1-c.bottom+t;
+}
+// Re-flag every pulled item on this page. Dragging the crop guides moves the
+// margins under them, so the markers have to follow.
+function syncOvOutside(){
+  const layer=$('#ovLayer'); if(!layer) return;
+  const p=curPage(), list=(p&&p.overlays)||[];
+  layer.querySelectorAll('.ov-item').forEach((el,i)=>{
+    if(list[i]) el.classList.toggle('outside', ovOutsideMargins(list[i],p));
+  });
+  const o=ovSelObj();
+  if(o) $('#ovOutWarn').style.display=ovOutsideMargins(o,p)?'':'none';
 }
 function selectOverlay(idx){
   state.ovSel=idx;
@@ -1888,6 +1985,7 @@ function refreshOvSel(){
   it.style.width=(o.w*100)+'%';
   if(o.h){ it.style.height=(o.h*100)+'%'; it.classList.add('stretched'); }
   else{ it.style.height=''; it.classList.remove('stretched'); }
+  it.classList.toggle('outside', ovOutsideMargins(o,curPage()));
   clearTimeout(ovImgTimer);
   ovImgTimer=setTimeout(()=>{
     const img=it.querySelector('img'), url=ovImgUrl(o);
@@ -1899,8 +1997,10 @@ function refreshOvSel(){
 function syncOvPanel(){
   const sec=$('#ovEditSec'); if(!sec) return;
   const o=ovSelObj();
+  $('#frame').classList.toggle('ov-editing', !!o);
   if(!o){ sec.style.display='none'; return; }
   sec.style.display='';
+  $('#ovOutWarn').style.display=ovOutsideMargins(o,curPage())?'':'none';
   const setV=(id,v)=>{ const el=$(id); if(el!==document.activeElement) el.value=v; };
   const sf=state.files[o.sf];
   $('#ovEditInfo').textContent=`From page ${o.sp+1}`
@@ -1945,10 +2045,13 @@ function ovEditLive(fn){
 // Edit finished (slider released / value committed): thumbnail + solid undo.
 function ovEditDone(){
   if(!ovSelObj()) return;
+  drawBorder();                     // size/position may have grown the sheet
   refreshThumb(state.fi,state.pi); flushCommit();
 }
 (function initOvPanel(){
   const on=(id,ev,fn)=>$(id).addEventListener(ev,fn);
+  $('#ovFitBtn').onclick=()=>{
+    ovEditLive(o=>ovFitIntoMargins(o,curPage())); ovEditDone(); };
   // size & position
   on('#ovW','input',()=>ovEditLive(o=>{
     const w=Math.min(1.5,Math.max(0.04,(+$('#ovW').value||4)/100));
@@ -2046,6 +2149,10 @@ function pullPageContent(sfi,spi){
   const o={sf:sfi, sp:spi, x:Math.min(0.9,dc.left), y:Math.min(1.05,y), w};
   if(!dest.overlays) dest.overlays=[];
   dest.overlays.push(o);
+  // with a border frame on, land the pull inside the margins: it would export
+  // either way (the sheet grows around it), but fitting keeps the sheet — and
+  // so the page's scale inside the frame — exactly as it was
+  if(state.borders.on) ovFitIntoMargins(o,dest);
   state.ovSel=dest.overlays.length-1;
   let msg=`Pulled page ${spi+1}’s content here — drag it into place; its own `
     +`controls (margins, stretch, colour…) are in the side panel`;
@@ -2168,10 +2275,11 @@ function draftPreview(fx,fy){
     ui.appendChild(svgEl('polyline',{fill:'none','class':'draft-prev faint',
       points:`${fx*W},${fy*H} ${first[0]*W},${first[1]*H}`}));
 }
-function shapeChanged(soon){
+function shapeChanged(soon,fi,pi){
   syncEditState();
-  if(soon){ refreshThumbSoon(state.fi,state.pi); commitSoon(); }
-  else{ refreshThumb(state.fi,state.pi); commit(); }
+  const F=fi===undefined?state.fi:fi, P=pi===undefined?state.pi:pi;
+  if(soon){ refreshThumbSoon(F,P); commitSoon(); }
+  else{ refreshThumb(F,P); commit(); }
 }
 function shapeBodyDown(ev,idx){
   if(state.shapeDraw||state.shapePick||state.magicMode||state.before) return;
@@ -2239,8 +2347,11 @@ function setShapeDraw(on){
   if(on){ setMagicMode(false); setMergePick(false);
     if(state.shapePick) setShapePick(false);
     state.shapeSel=-1; syncShapeColorUI(); }
+  // Leaving draw mode with a closable polygon on screen keeps it instead of
+  // binning it — finishDraft empties the draft first, so this can't loop.
+  if(!on && state.shapeDraft.length>=3){ finishDraft(); return; }
   state.shapeDraw=on;
-  if(!on) state.shapeDraft=[];
+  if(!on){ state.shapeDraft=[]; state.shapeDraftAt=null; }
   const b=$('#shapeDrawBtn');
   b.classList.toggle('magic-active',on);
   b.textContent=on?'✓ Finish polygon (Enter)':'🔷 Draw polygon';
@@ -2257,17 +2368,44 @@ function setShapePick(on){
   $('#frame').classList.toggle('shape-pick',on);
   drawShapes();
 }
-function finishDraft(){
-  const p=curPage();
-  if(!p) return;
-  if(state.shapeDraft.length<3){ toast('Place at least 3 points first'); return; }
+// Close the polygon being drawn and store it on the page its points were
+// placed on — that is normally the current page, but auto-closing on a page
+// switch has to land the shape back where it was actually drawn.
+function finishDraft(quiet){
+  const at=state.shapeDraftAt;
+  const fi=at?at.fi:state.fi, pi=at?at.pi:state.pi;
+  const f=state.files[fi], p=f&&f.pages[pi];
+  if(!p){ state.shapeDraft=[]; state.shapeDraftAt=null; return false; }
+  if(state.shapeDraft.length<3){
+    if(!quiet) toast('Place at least 3 points first');
+    return false;
+  }
   if(!p.shapes) p.shapes=[];
   p.shapes.push({pts:state.shapeDraft.map(pt=>[...pt]), color:state.shapeColor});
-  state.shapeDraft=[];
-  state.shapeSel=p.shapes.length-1;
+  const here = fi===state.fi && pi===state.pi;
+  state.shapeDraft=[]; state.shapeDraftAt=null;
+  if(here) state.shapeSel=p.shapes.length-1;
   setShapeDraw(false);
-  shapeChanged();
-  toast('Polygon added — drag the white dots to reshape it; purple dots add new points');
+  shapeChanged(false,fi,pi);
+  if(!quiet) toast('Polygon added — drag the white dots to reshape it; purple dots add new points');
+  return true;
+}
+// An unclosed polygon lives only in state.shapeDraft, so anything that would
+// walk away from it (switching page, saving a draft, exporting) used to throw
+// the work away silently. Three points already make a shape: close it and keep
+// it. Fewer than that can't form one, so it just goes.
+function flushShapeDraft(){
+  if(state.shapeDraft.length<3) return false;
+  const at=state.shapeDraftAt;
+  if(!finishDraft(true)) return false;
+  toast('🔷 Unfinished polygon closed and kept'
+    +(at?` on page ${at.pi+1}`:'')+' — press Enter to close it yourself next time');
+  return true;
+}
+// Explicitly throw the in-progress polygon away (Escape / starting over).
+function cancelShapeDraft(){
+  state.shapeDraft=[]; state.shapeDraftAt=null;
+  setShapeDraw(false);
 }
 function setShapeColor(hex,fromPick){
   state.shapeColor=hex;
@@ -2303,8 +2441,22 @@ function syncShapeList(){
   list.innerHTML='';
   const p=curPage();
   const shapes=(p&&p.shapes)||[];
+  // The polygon being drawn already looks like a filled shape on the page, so
+  // say plainly that it isn't one yet — until it closes it is not part of the
+  // page, the thumbnails, the export or a saved draft.
+  if(state.shapeDraw && state.shapeDraft.length){
+    const d=document.createElement('div');
+    d.className='muted';
+    d.style.cssText='color:#f5a623;margin-bottom:6px';
+    d.textContent=`✏️ Drawing — ${state.shapeDraft.length} point`
+      +`${state.shapeDraft.length>1?'s':''} placed. `
+      +(state.shapeDraft.length>=3
+        ? 'Press Enter (or click the green point) to close it.'
+        : 'Place at least 3 points, then press Enter to close it.');
+    list.appendChild(d);
+  }
   if(!shapes.length){
-    list.innerHTML='<div class="muted">No shapes on this page yet.</div>';
+    list.insertAdjacentHTML('beforeend','<div class="muted">No shapes on this page yet.</div>');
     return;
   }
   shapes.forEach((s,idx)=>{
@@ -2326,7 +2478,7 @@ $('#shapeDrawBtn').onclick=()=>{
   if(state.before) setBefore(false);
   if(state.shapeDraw){
     if(state.shapeDraft.length>=3) finishDraft();
-    else setShapeDraw(false);
+    else cancelShapeDraft();
   }else setShapeDraw(true);
 };
 $('#shapePickBtn').onclick=()=>{
@@ -2357,6 +2509,9 @@ $('#frame').addEventListener('pointerdown',ev=>{
   const d0=state.shapeDraft[0];
   if(d0&&state.shapeDraft.length>=3
      &&Math.hypot((fx-d0[0])*r.width,(fy-d0[1])*r.height)<12){ finishDraft(); return; }
+  // remember whose page these points belong to, so the polygon can still be
+  // closed onto it after a page switch
+  if(!state.shapeDraft.length) state.shapeDraftAt={fi:state.fi, pi:state.pi};
   state.shapeDraft.push([fx,fy]);
   drawShapes();
   draftPreview(fx,fy);
@@ -2371,7 +2526,7 @@ $('#frame').addEventListener('pointerleave',()=>draftPreview(null));
 document.addEventListener('keydown',e=>{
   if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)) return;
   if(e.key==='Escape'){
-    if(state.shapeDraw){ setShapeDraw(false); toast('Polygon cancelled'); return; }
+    if(state.shapeDraw){ cancelShapeDraft(); toast('Polygon cancelled'); return; }
     if(state.shapePick){ setShapePick(false); return; }
     if(state.shapeSel>=0){ state.shapeSel=-1; drawShapes(); return; }
   }
@@ -2406,6 +2561,7 @@ function drawCrop(){
   sb.style.cssText=`bottom:0;left:0;right:0;height:${B}%`;
   sl.style.cssText=`top:${T}%;bottom:${B}%;left:0;width:${L}%`;
   sr.style.cssText=`top:${T}%;bottom:${B}%;right:0;width:${R}%`;
+  syncOvOutside();   // the margins just moved under any pulled content
   syncEditState();
 }
 
@@ -3095,7 +3251,9 @@ function drawBorder(){
   const natW=img.naturalWidth, natH=img.naturalHeight;
   if(!natW||!natH){ layer.style.display='none'; return; }
   layer.style.display='';
-  const c=p.crop;
+  // The grown crop, not the raw one: pulled content parked past the margins
+  // enlarges the sheet, and the frame fits that enlarged sheet on export.
+  const c=effCrop(p);
   const kw=Math.max(0.02,1-c.left-c.right), kh=Math.max(0.02,1-c.top-c.bottom);
   const cfg=meta.config, slot=cfg.slot;
   const tw=cfg.template_size[0], th=cfg.template_size[1];
@@ -3155,10 +3313,16 @@ function drawBorder(){
     el.style.display=''; if(bgc) el.style.background=bgc;
     el.style.left=x+'px'; el.style.top=y+'px';
     el.style.width=w+'px'; el.style.height=h+'px';};
-  bar('#bfL', sxp-pad, syp-pad, box.x-(sxp-pad), slh+2*pad, bgCss);
-  bar('#bfR', box.x+box.w, syp-pad, (sxp+slw+pad)-(box.x+box.w), slh+2*pad, bgCss);
-  bar('#bfT', box.x, syp-pad, box.w, box.y-(syp-pad), bgCss);
-  bar('#bfB', box.x, box.y+box.h, box.w, (syp+slh+pad)-(box.y+box.h), bgCss);
+  // The bars stop at the *page image's* edge, not the crop box's — identical
+  // while the box sits inside the page, but once pulled content has grown the
+  // sheet past it, the export fills that extra band with paper too, so it has
+  // to read as paper here rather than letting the stage show through.
+  const px0=Math.max(box.x,0), py0=Math.max(box.y,0);
+  const px1=Math.min(box.x+box.w,W), py1=Math.min(box.y+box.h,H);
+  bar('#bfL', sxp-pad, syp-pad, px0-(sxp-pad), slh+2*pad, bgCss);
+  bar('#bfR', px1, syp-pad, (sxp+slw+pad)-px1, slh+2*pad, bgCss);
+  bar('#bfT', px0, syp-pad, px1-px0, py0-(syp-pad), bgCss);
+  bar('#bfB', px0, py1, px1-px0, (syp+slh+pad)-py1, bgCss);
   // Content that zoom/stretch pushes past the window gets cropped on export —
   // dim it here like every other cut-away region so the preview reads true.
   const ix0=Math.max(box.x,sxp), ix1=Math.min(box.x+box.w,sxp+slw);
@@ -3521,6 +3685,7 @@ function draftAutoName(){
 }
 async function saveDraft(exported=false, quiet=false){
   if(!state.job||!state.files.length){ if(!quiet) toast('Load a PDF first'); return false; }
+  flushShapeDraft();      // a polygon still being drawn belongs in the snapshot
   try{
     const r=await fetch('/api/drafts/save',{method:'POST',
       headers:{'Content-Type':'application/json'},
@@ -3682,11 +3847,12 @@ async function openDraft(id){
 
 // ---- export -------------------------------------------------------------
 $('#exportBtn').onclick=async()=>{
+  flushShapeDraft();       // …and in the exported PDF
   const settings={};
   state.files.forEach(f=>{
     settings[f.fid]={pages:f.pages.map((p,pi)=>({src:p.src??pi,angle:p.angle,rotate:p.rotate||0,
       crop:p.crop,removals:p.removals,
-      overlays:(p.overlays||[]).map(ovResolve).filter(Boolean),
+      overlays:(p.overlays||[]).map(o=>ovResolve(o,p)).filter(Boolean),
       shapes:packShapes(p.shapes),
       color:p.color,bfit:p.bfit||DEF_BFIT,deleted:!!p.deleted,
       wmo:p.wmo?{...p.wmo}:null}))};

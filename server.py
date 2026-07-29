@@ -251,23 +251,28 @@ def preview():
     # Removals before crop: their fractions are in uncropped-deskewed space.
     if removals:
         out = imaging.apply_removals(out, removals)
-    if crop:
-        out = imaging.apply_crop(out, crop)
+    # Content pulled from other pages is part of the page too: where it sits
+    # past the margins the sheet grows to keep it instead of clipping it, so
+    # every step from here on works against that grown box.
+    overlays = _overlays_from_args(request.args)
+    ecrop = imaging.expanded_crop(crop, overlays)
+    if ecrop:
+        out = imaging.apply_crop(out, ecrop)
     out = imaging.finish_color(out, color, palette)
     # Merged-page overlays sit under the watermark, exactly like on export.
-    overlays = _overlays_from_args(request.args)
     if overlays:
         out = imaging.paste_overlays(
-            out, overlays, crop, palette,
+            out, overlays, ecrop, palette,
             lambda ov: BASE_CACHE.get(
                 (job_id, str(ov.get("fid", "")), int(ov.get("page", 0) or 0))))
     # Shape-filler polygons cover content under the watermark, like on export.
     shapes = _shapes_from_args(request.args)
     if shapes:
-        out = imaging.draw_shapes(out, shapes, crop)
+        out = imaging.draw_shapes(out, shapes, ecrop)
     if watermark:
         sheet, centre = imaging.watermark_geometry(
-            out.size, wm_crop, wm_center_margins, cropped=crop is not None)
+            out.size, ecrop if ecrop else wm_crop, wm_center_margins,
+            cropped=ecrop is not None, margin_crop=wm_crop)
         out = imaging.apply_watermark(out, wm_opacity, wm_scale, wm_rotate,
                                       wm_dx, wm_dy, sheet, centre,
                                       align_ink=wm_center_margins)
@@ -464,15 +469,20 @@ def export():
                 crop = ps.get("crop", f["pages"][i]["crop"])
                 removals = ps.get("removals") if "removals" in ps else f["pages"][i].get("removals")
                 color = ps.get("color") or imaging.DEFAULT_COLOR
+                # Content pulled from other pages is part of the page too: where
+                # it sits past the margins the sheet grows to keep it instead of
+                # clipping it. Everything downstream measures against that grown
+                # box — only the watermark still anchors to the real margins.
+                ecrop = imaging.expanded_crop(crop, ps.get("overlays"))
                 hi = imaging.render_page(doc, i, dpi)
-                processed = imaging.process_page(hi, angle, crop, color, palette,
+                processed = imaging.process_page(hi, angle, ecrop, color, palette,
                                                  removals, rot)
                 if ps.get("overlays"):
                     processed = imaging.paste_overlays(
-                        processed, ps["overlays"], crop, palette,
+                        processed, ps["overlays"], ecrop, palette,
                         _render_overlay_src)
                 if ps.get("shapes"):
-                    processed = imaging.draw_shapes(processed, ps["shapes"], crop)
+                    processed = imaging.draw_shapes(processed, ps["shapes"], ecrop)
                 wov = ps.get("wmo") or {}
 
                 def _wp(key, default):
@@ -487,7 +497,8 @@ def export():
                     stamp = watermark and (wm_scope != "page" or ps.get("wm"))
                 if stamp:
                     sheet, centre = imaging.watermark_geometry(
-                        processed.size, crop, wm_center_margins, cropped=True)
+                        processed.size, ecrop, wm_center_margins, cropped=True,
+                        margin_crop=crop)
                     processed = imaging.apply_watermark(
                         processed,
                         _wp("opacity", wm_opacity), _wp("scale", wm_scale),

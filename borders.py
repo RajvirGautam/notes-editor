@@ -42,6 +42,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
+import imaging
+
 HERE = Path(__file__).parent
 BORDERS_DIR = HERE / "borders"
 FONT_PATH = HERE / "fonts" / "Urbanist-var.ttf"
@@ -253,16 +255,10 @@ def _paper_color(img: Image.Image) -> tuple:
 
     The slot's slack is filled with this instead of hard white, so the added
     space blends seamlessly with the sheet — the content reads as one full
-    page inside the frame rather than a smaller page floating on white.
+    page inside the frame rather than a smaller page floating on white. Shared
+    with the grown-sheet padding in imaging.apply_crop.
     """
-    small = img.convert("RGB")
-    small.thumbnail((96, 96))
-    arr = np.asarray(small, dtype=np.float32)
-    lum = 0.299 * arr[..., 0] + 0.587 * arr[..., 1] + 0.114 * arr[..., 2]
-    bright = arr[lum >= np.percentile(lum, 70)]
-    if len(bright) == 0:
-        return (255, 255, 255)
-    return tuple(int(round(v)) for v in np.median(bright, axis=0))
+    return imaging.paper_color(img)
 
 
 def _clampf(v, lo=0.2, hi=4.0, dflt=1.0) -> float:

@@ -206,18 +206,61 @@ def content_bbox_fractions(img: Image.Image, pad_frac: float = 0.01) -> dict:
     }
 
 
+def paper_color(img: Image.Image) -> tuple:
+    """
+    Median colour of the page's bright (paper) pixels.
+
+    Used wherever blank space has to be *added* to a sheet — the border frame's
+    slack, the band a grown crop opens up — so the filler blends with the scan
+    instead of reading as a hard-white rectangle pasted on top of it.
+    """
+    small = img.convert("RGB")
+    small.thumbnail((96, 96))
+    arr = np.asarray(small, dtype=np.float32)
+    if arr.size == 0:
+        return (255, 255, 255)
+    lum = 0.299 * arr[..., 0] + 0.587 * arr[..., 1] + 0.114 * arr[..., 2]
+    bright = arr[lum >= np.percentile(lum, 70)]
+    if len(bright) == 0:
+        return (255, 255, 255)
+    return tuple(int(round(v)) for v in np.median(bright, axis=0))
+
+
 def apply_crop(img: Image.Image, crop: dict) -> Image.Image:
-    """Crop by fractional insets {left, top, right, bottom}."""
+    """
+    Crop by fractional insets {left, top, right, bottom}.
+
+    An inset may be *negative*, which grows the sheet on that side instead of
+    trimming it; the band that opens up is filled with the page's own paper
+    tone so it reads as more of the same sheet. That is how content pulled from
+    another page survives being parked past the crop margins (see
+    expanded_crop) — the page gets bigger rather than the content getting cut.
+    """
     w, h = img.size
-    left = int(round(crop.get("left", 0.0) * w))
-    top = int(round(crop.get("top", 0.0) * h))
-    right = w - int(round(crop.get("right", 0.0) * w))
-    bottom = h - int(round(crop.get("bottom", 0.0) * h))
-    left = max(0, min(left, w - 1))
-    top = max(0, min(top, h - 1))
-    right = max(left + 1, min(right, w))
-    bottom = max(top + 1, min(bottom, h))
-    return img.crop((left, top, right, bottom))
+    left = int(round(float(crop.get("left", 0.0) or 0.0) * w))
+    top = int(round(float(crop.get("top", 0.0) or 0.0) * h))
+    right = w - int(round(float(crop.get("right", 0.0) or 0.0) * w))
+    bottom = h - int(round(float(crop.get("bottom", 0.0) or 0.0) * h))
+    if left >= 0 and top >= 0 and right <= w and bottom <= h:
+        left = max(0, min(left, w - 1))
+        top = max(0, min(top, h - 1))
+        right = max(left + 1, min(right, w))
+        bottom = max(top + 1, min(bottom, h))
+        return img.crop((left, top, right, bottom))
+    # Grown sheet: keep whatever of the box is really on the page, pad the rest.
+    right = max(left + 1, right)
+    bottom = max(top + 1, bottom)
+    ix0 = max(0, min(left, w - 1))
+    iy0 = max(0, min(top, h - 1))
+    ix1 = min(w, max(right, ix0 + 1))
+    iy1 = min(h, max(bottom, iy0 + 1))
+    inner = img.crop((ix0, iy0, ix1, iy1))
+    fill = paper_color(inner)
+    if img.mode == "RGBA":
+        fill = fill + (255,)
+    out = Image.new(img.mode, (right - left, bottom - top), fill)
+    out.paste(inner, (ix0 - left, iy0 - top))
+    return out
 
 def apply_removals(img: Image.Image, removals: list[dict] | None) -> Image.Image:
     """
@@ -724,7 +767,8 @@ def _load_watermark() -> Image.Image | None:
 
 
 def watermark_geometry(size: tuple[int, int], crop: dict | None,
-                       center_margins: bool, cropped: bool) -> tuple:
+                       center_margins: bool, cropped: bool,
+                       margin_crop: dict | None = None) -> tuple:
     """
     Work out where the watermark goes on one page.
 
@@ -744,6 +788,11 @@ def watermark_geometry(size: tuple[int, int], crop: dict | None,
     page had been watermarked before cropping. When it hasn't (the main
     on-screen preview shows the uncropped page under draggable guides), the
     margin box is the crop inset rect instead.
+
+    `crop` is the box `img` actually corresponds to, which for a sheet grown
+    around pulled content (expanded_crop) is wider than the margins the user
+    set; pass those original margins as `margin_crop` so the mark still centres
+    on them. It defaults to `crop`, i.e. the whole image.
     """
     W, H = size
     c = crop or {}
@@ -758,7 +807,14 @@ def watermark_geometry(size: tuple[int, int], crop: dict | None,
         full_w, full_h = W / kw, H / kh
         x0, y0 = -left * full_w, -top * full_h
         sheet = (x0, y0, x0 + full_w, y0 + full_h)
-        margin = (0.0, 0.0, float(W), float(H))
+        m = margin_crop or c
+        ml = float(m.get("left", 0) or 0)
+        mt = float(m.get("top", 0) or 0)
+        mr = float(m.get("right", 0) or 0)
+        mb = float(m.get("bottom", 0) or 0)
+        # (0, 0, W, H) whenever the image *is* the margin box — the usual case.
+        margin = (x0 + ml * full_w, y0 + mt * full_h,
+                  x0 + (1.0 - mr) * full_w, y0 + (1.0 - mb) * full_h)
     else:
         sheet = (0.0, 0.0, float(W), float(H))
         margin = (left * W, top * H, (1.0 - right) * W, (1.0 - bottom) * H)
@@ -856,6 +912,49 @@ def apply_watermark(img: Image.Image,
     return Image.alpha_composite(base, canvas).convert("RGB")
 
 
+def expanded_crop(crop: dict | None, overlays: list[dict] | None) -> dict | None:
+    """
+    A page's crop insets grown outward until every pulled overlay is inside.
+
+    Overlay placements (x/y/w/h) are fractions of the destination's *uncropped*
+    page — the same space the crop insets live in — so an overlay parked past a
+    margin simply drives that inset negative, and apply_crop reads a negative
+    inset as "grow the sheet here". Pulled content is part of the page the user
+    built, so it exports in full: the sheet gets bigger instead of the content
+    getting clipped at the margin.
+
+    Callers must use the returned crop for *every* later step of the page
+    (paste_overlays, draw_shapes, watermark_geometry) — it's the box the
+    rendered image now corresponds to. An overlay with no explicit height
+    fraction can only grow the sides, not the bottom.
+    """
+    if not overlays:
+        return crop
+    c = dict(crop or {})
+    left = float(c.get("left", 0) or 0)
+    top = float(c.get("top", 0) or 0)
+    right = float(c.get("right", 0) or 0)
+    bottom = float(c.get("bottom", 0) or 0)
+    for ov in overlays:
+        try:
+            x = float(ov.get("x", 0) or 0)
+            y = float(ov.get("y", 0) or 0)
+            w = float(ov.get("w", 0) or 0)
+            h = float(ov.get("h", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if w <= 0:
+            continue
+        left = min(left, x)
+        top = min(top, y)
+        right = min(right, 1.0 - (x + w))
+        if h > 0:
+            bottom = min(bottom, 1.0 - (y + h))
+    c["left"], c["top"] = left, top
+    c["right"], c["bottom"] = right, bottom
+    return c
+
+
 def paste_overlays(img: Image.Image, overlays: list[dict], crop: dict | None,
                    palette: dict | None, src_render) -> Image.Image:
     """
@@ -866,9 +965,10 @@ def paste_overlays(img: Image.Image, overlays: list[dict], crop: dict | None,
     top-left corner and w the width, all fractions of the destination's
     *uncropped* deskewed page — the same space the editor's guides live in.
     `crop` is the destination crop already applied to `img` (None if it wasn't)
-    so placements map through it. `src_render(ov)` returns the source page's
-    raw raster (or None to skip that overlay). A bad overlay never kills the
-    page — it's just skipped.
+    so placements map through it — and it must be the expanded_crop() one, the
+    grown box that guarantees each overlay lands on the sheet rather than off
+    its edge. `src_render(ov)` returns the source page's raw raster (or None to
+    skip that overlay). A bad overlay never kills the page — it's just skipped.
     """
     if not overlays:
         return img
