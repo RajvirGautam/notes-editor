@@ -16,7 +16,7 @@ from __future__ import annotations
 import io
 import os
 import numpy as np
-from PIL import Image, ImageEnhance, ImageFilter
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 import fitz  # PyMuPDF
 
 
@@ -890,12 +890,74 @@ def paste_overlays(img: Image.Image, overlays: list[dict], crop: dict | None,
                                ov.get("crop") or {}, ov.get("color"),
                                palette, ov.get("removals"),
                                float(ov.get("rotate", 0) or 0))
+            if ov.get("shapes"):
+                src = draw_shapes(src, ov["shapes"], ov.get("crop"))
             ow = max(1, int(round(float(ov.get("w", 0.5)) * full_w)))
             oh = max(1, int(round(ow * src.height / max(1, src.width))))
             src = src.resize((ow, oh), Image.LANCZOS)
             x = int(round((float(ov.get("x", 0)) - cl) * full_w))
             y = int(round((float(ov.get("y", 0)) - ct) * full_h))
             img.paste(src, (x, y))           # paste clips at the page edges
+        except Exception:
+            continue
+    return img
+
+
+def _parse_hex_color(s) -> tuple[int, int, int]:
+    """'#rrggbb' (or '#rgb') -> RGB tuple; anything malformed -> white."""
+    try:
+        s = str(s or "").strip().lstrip("#")
+        if len(s) == 3:
+            s = "".join(ch * 2 for ch in s)
+        if len(s) != 6:
+            return (255, 255, 255)
+        return tuple(int(s[i:i + 2], 16) for i in (0, 2, 4))
+    except Exception:
+        return (255, 255, 255)
+
+
+def draw_shapes(img: Image.Image, shapes: list[dict] | None,
+                crop: dict | None = None) -> Image.Image:
+    """
+    Burn user-drawn filled polygons ("shape filler") into a page.
+
+    Each shape is {"pts": [[x, y], ...], "color": "#rrggbb"} with points as
+    fractions of the *uncropped* deskewed page (post-removals) — the space the
+    editor's main preview shows. `crop` is the crop already applied to `img`
+    (None if it wasn't), so points map through the insets exactly like
+    paste_overlays. Edges are anti-aliased via a 2x supersampled mask at
+    preview sizes (skipped at large export sizes, where aliasing is invisible).
+    A malformed shape never kills the page — it's just skipped.
+    """
+    if not shapes:
+        return img
+    c = crop or {}
+    cl = float(c.get("left", 0) or 0)
+    ct = float(c.get("top", 0) or 0)
+    cr = float(c.get("right", 0) or 0)
+    cb = float(c.get("bottom", 0) or 0)
+    kw = max(1e-6, 1.0 - cl - cr)
+    kh = max(1e-6, 1.0 - ct - cb)
+    W, H = img.size
+    full_w, full_h = W / kw, H / kh          # uncropped-equivalent sheet size
+    ss = 2 if max(W, H) <= 1600 else 1       # supersample small renders only
+    draw = ImageDraw.Draw(img) if ss == 1 else None
+    for sh in shapes:
+        try:
+            pts = sh.get("pts") or []
+            if len(pts) < 3:
+                continue
+            xy = [((float(p[0]) - cl) * full_w, (float(p[1]) - ct) * full_h)
+                  for p in pts]
+            col = _parse_hex_color(sh.get("color"))
+            if ss == 1:
+                draw.polygon(xy, fill=col)
+            else:
+                mask = Image.new("L", (W * ss, H * ss), 0)
+                ImageDraw.Draw(mask).polygon(
+                    [(x * ss, y * ss) for x, y in xy], fill=255)
+                mask = mask.resize((W, H), Image.BILINEAR)
+                img.paste(Image.new("RGB", (W, H), col), (0, 0), mask)
         except Exception:
             continue
     return img

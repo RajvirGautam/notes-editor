@@ -42,6 +42,15 @@ To use a specific Python: `PYTHON=python3.12 ./run.sh`
   like). The source page is deleted automatically (untick the checkbox to keep
   it, or restore it from its thumbnail). The block follows the source page's
   crop/tilt/colour live, and export + thumbnails composite it exactly as shown.
+- **Shape filler** — hide anything on a page under a filled free polygon:
+  *🔷 Draw polygon*, click to place points, click the first (green) point or
+  press Enter to close. Drag the white dots to move points; dragging a purple
+  mid-edge dot inserts a new point there (subdivide as much as you like);
+  double-click a dot removes it; drag the fill to move the whole shape.
+  Fill colour comes from the colour picker, or *💧 Pick from page* grabs the
+  exact pixel colour you click on the page itself — ideal for matching the
+  paper tone so the patch is invisible. Shapes are burned into thumbnails
+  and the export exactly as previewed.
 - **Navigation** — the left rail lists every page (green dot = edited);
   `←` / `→` also step through pages.
 

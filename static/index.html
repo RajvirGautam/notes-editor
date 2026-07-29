@@ -155,6 +155,7 @@
   .sec h3::before{font-size:15px;line-height:1}
   .sec[data-sec=remover] h3::before{content:'🪄'}
   .sec[data-sec=merge] h3::before{content:'🗂️'}
+  .sec[data-sec=shapes] h3::before{content:'🔷'}
   .sec[data-sec=rotate] h3::before{content:'🔄'}
   .sec[data-sec=tilt] h3::before{content:'📐'}
   .sec[data-sec=crop] h3::before{content:'✂️'}
@@ -229,6 +230,25 @@
   .removal-band .rem-del{font-size:12px;background:rgba(139,92,246,.85);color:#fff;border:none;border-radius:3px;cursor:pointer;padding:1px 5px;line-height:1}
   .removal-band .rem-del:hover{background:#ff4757}
   .drag-band{position:absolute;left:0;right:0;background:rgba(139,92,246,.32);border:2px solid #8b5cf6;pointer-events:none}
+  /* shape filler (free polygons that hide content under a colour fill) */
+  #shapeLayer{position:absolute;inset:0;z-index:3;pointer-events:none;overflow:visible}
+  #shapeLayer polygon.shp{pointer-events:auto;cursor:grab}
+  #shapeLayer polygon.shp.sel{stroke:#8b5cf6;stroke-width:1.5;stroke-dasharray:4 3}
+  #shapeLayer .vtx{fill:#fff;stroke:#8b5cf6;stroke-width:2;cursor:move;pointer-events:auto}
+  #shapeLayer .mid{fill:#8b5cf6;stroke:#fff;stroke-width:1;opacity:.6;cursor:copy;pointer-events:auto}
+  #shapeLayer .mid:hover{opacity:1}
+  #shapeLayer .draft-line{stroke:#8b5cf6;stroke-width:1.5;stroke-dasharray:5 4;pointer-events:none}
+  #shapeLayer .v0{fill:#34d399;stroke:#fff;stroke-width:2;pointer-events:auto;cursor:pointer}
+  #frame.before #shapeLayer,#frame.deleted #shapeLayer{display:none}
+  #frame.magic-mode #shapeLayer *{pointer-events:none}
+  #frame.shape-draw,#frame.shape-pick{cursor:crosshair!important}
+  #frame.shape-draw #shapeLayer *,#frame.shape-pick #shapeLayer *{pointer-events:none}
+  #frame.shape-draw #shapeLayer .v0{pointer-events:auto}
+  #frame.shape-draw .ov-item,#frame.shape-pick .ov-item{pointer-events:none}
+  input[type=color]{width:38px;height:30px;padding:2px;background:var(--panel2);
+    border:1px solid var(--line);border-radius:6px;cursor:pointer;flex:0 0 auto}
+  .shape-item-swatch{display:inline-block;width:15px;height:15px;border-radius:4px;
+    border:1px solid #0006;flex:0 0 auto;vertical-align:-3px}
   .rem-item{display:flex;align-items:center;justify-content:space-between;background:var(--panel);border:1px solid var(--line);padding:5px 8px;border-radius:6px;margin-bottom:4px;font-size:12px}
   .rem-item .rem-del-btn{background:transparent;border:none;color:#ff4757;cursor:pointer;padding:0 4px;font-size:14px;font-weight:bold}
   .rem-item .rem-del-btn:hover{color:#ff6b81}
@@ -366,6 +386,7 @@
           <div id="bhName" class="bh"></div>
         </div>
         <div id="ovLayer"></div>
+        <svg id="shapeLayer"></svg>
         <div class="guide h" id="gTop"><div class="grip"></div></div>
         <div class="guide h" id="gBot"><div class="grip"></div></div>
         <div class="guide v" id="gLeft"><div class="grip"></div></div>
@@ -424,6 +445,31 @@
           <span class="muted" style="flex:1;width:auto">Delete the source page after
             pulling (restore it any time from its thumbnail)</span></label>
         <div id="ovList"></div>
+      </div>
+    </div>
+
+    <div class="sec" data-sec="shapes">
+      <h3>Shape filler <span id="shapeBadge" class="badge" style="display:none">0</span></h3>
+      <div class="secbody">
+        <div class="muted" style="margin-bottom:8px">Hide anything on the page under
+          a filled polygon. Click to place points; click the first (green) point or
+          press Enter to close it. Drag the white dots to reshape — dragging a
+          purple mid-point adds a new point there (as many as you like).
+          Double-click a dot to remove it, Esc cancels.</div>
+        <div class="btnrow" style="margin-bottom:8px">
+          <button id="shapeDrawBtn" style="flex:1">🔷 Draw polygon</button>
+        </div>
+        <div class="row" style="margin-bottom:8px">
+          <label>Fill</label>
+          <input type="color" id="shapeColor" value="#ffffff"
+            title="Fill colour — recolours the selected polygon, or sets the colour for the next one"/>
+          <button id="shapePickBtn" style="flex:1"
+            title="Click anywhere on the page to grab that exact pixel colour">💧 Pick from page</button>
+        </div>
+        <div id="shapeList" style="margin-bottom:8px"></div>
+        <div class="btnrow">
+          <button id="shapeClearBtn" style="flex:1">Clear shapes on this page</button>
+        </div>
       </div>
     </div>
 
@@ -686,6 +732,11 @@ const state = {
   before:false,                     // global before/after view toggle
   magicMode:false,                  // magic remover tool active flag
   mergePick:false,                  // merge-pages: waiting for a source page pick
+  shapeDraw:false,                  // shape filler: placing polygon points
+  shapePick:false,                  // shape filler: eyedropper (pick colour from page)
+  shapeSel:-1,                      // index of the selected shape on this page
+  shapeDraft:[],                    // points of the polygon being drawn
+  shapeColor:'#ffffff',             // fill colour for the next polygon
   pendingGaps:[],                   // dragged-but-not-yet-removed bands (visible space)
   palette:null,                     // learned colour palette (global to job)
   paletteVersion:0,                 // bumps on each new sample (cache-bust)
@@ -724,6 +775,7 @@ function pageEdited(f,i){
     if(Math.abs(p.crop[k]-a.crop[k])>0.0005) return true;
   if(p.removals && p.removals.length > 0) return true;
   if(p.overlays && p.overlays.length > 0) return true;
+  if(p.shapes && p.shapes.length > 0) return true;
   if(colorEdited(p)) return true;
   return false;
 }
@@ -748,6 +800,7 @@ function snapshot(){
       pages: f.pages.map(p=>({src:p.src, angle:p.angle, rotate:p.rotate||0, crop:{...p.crop},
         removals:[...(p.removals||[])],
         overlays:(p.overlays||[]).map(o=>({...o})),
+        shapes:copyShapes(p.shapes),
         color:{...p.color}, bfit:{...(p.bfit||DEF_BFIT)}, deleted:!!p.deleted,
         wm:!!p.wm}))
     })),
@@ -804,6 +857,7 @@ function applySnapshot(str){
       p.crop = {...sp.crop}; p.color = {...sp.color};
       p.removals = sp.removals ? [...sp.removals] : [];
       p.overlays = (sp.overlays||[]).map(o=>({...o}));
+      p.shapes = copyShapes(sp.shapes);
       p.bfit = {...DEF_BFIT, ...(sp.bfit||legacyBfit||{})};
       p.deleted = !!sp.deleted;
       p.wm = !!sp.wm;
@@ -866,7 +920,7 @@ function ingest(data){
     // pages can be reordered freely while previews/exports keep pointing at
     // the right PDF page.
     f.pages=f.pages.map((p,i)=>({src:i, angle:p.angle, rotate:0, crop:{...p.crop}, removals: p.removals ? [...p.removals] : [],
-      overlays:[],
+      overlays:[], shapes:[],
       color:{...DEF_COLOR}, bfit:{...DEF_BFIT}, deleted:false, wm:false, w:p.w, h:p.h}));
   });
   state.files=data.files;
@@ -886,6 +940,9 @@ function ingest(data){
 function discardJob(){
   state.job=null; state.files=[]; state.fi=0; state.pi=0;
   state.draftId=null;
+  state.shapeSel=-1; state.shapeDraft=[];
+  if(state.shapeDraw) setShapeDraw(false);
+  if(state.shapePick) setShapePick(false);
   state.before=false; state.palette=null; state.paletteVersion++;
   state.watermark={on:false, scope:'all', opacity:1, scale:1.3, rotate:0, dx:0, dy:0, centerMargins:true};
   state.borders={on:false, cls:state.borders.cls, board:'', stream:'', number:'', name:''};
@@ -971,7 +1028,7 @@ function thumbUrl(fi,pi){
   const f=state.files[fi], p=f.pages[pi], c=p.crop;
   return `/api/preview?job=${state.job}&fid=${f.fid}&page=${p.src??pi}&angle=${p.angle}`
     +`&rot=${p.rotate||0}`
-    +colorQuery(p.color)+wmQuery(p)+removalsQuery(p.removals)+ovQuery(p)
+    +colorQuery(p.color)+wmQuery(p)+removalsQuery(p.removals)+ovQuery(p)+shapesQuery(p)
     +`&crl=${c.left}&crt=${c.top}&crr=${c.right}&crb=${c.bottom}`
     +`&maxdim=${thumbDim()}&pv=${state.paletteVersion}`;
 }
@@ -1121,12 +1178,16 @@ let previewTimer=null;
 function loadPage(){
   const f=curFile(), p=curPage(); if(!p) return;
   state.pendingGaps = [];           // selections don't carry across pages
+  state.shapeSel=-1; state.shapeDraft=[];  // shape edits don't either
+  if(state.shapeDraw) setShapeDraw(false);
+  if(state.shapePick) setShapePick(false);
   $('#pageLabel').textContent=`${f.name} — page ${state.pi+1} / ${f.npages}`;
   syncControls();
   syncWatermarkBtn();      // the per-page stamp button follows the current page
   syncBordersUI();
   syncDeletedUI();
   drawOverlays();
+  drawShapes();
   refreshPreview();
 }
 function colorQuery(c){
@@ -1288,6 +1349,10 @@ function syncRemovalList(){
 }
 
 function setMagicMode(on){
+  if(on){
+    if(state.shapeDraw) setShapeDraw(false);
+    if(state.shapePick) setShapePick(false);
+  }
   state.magicMode = on;
   const btn = $('#magicBtn');
   if(btn){
@@ -1456,7 +1521,7 @@ function ovResolve(o){
   const sp=sf.pages[o.sp]; if(!sp) return null;
   return {fid:sf.fid, page:sp.src??o.sp, angle:sp.angle, rotate:sp.rotate||0,
     crop:{...sp.crop}, removals:[...(sp.removals||[])], color:{...sp.color},
-    x:o.x, y:o.y, w:o.w};
+    shapes:packShapes(sp.shapes), x:o.x, y:o.y, w:o.w};
 }
 function ovQuery(p){
   const list=(p.overlays||[]).map(ovResolve).filter(Boolean);
@@ -1469,6 +1534,7 @@ function ovImgUrl(o){
   return `/api/preview?job=${state.job}&fid=${r.fid}&page=${r.page}`
     +`&angle=${r.angle}&rot=${r.rotate}`
     +colorQuery(r.color)+removalsQuery(r.removals)
+    +(r.shapes&&r.shapes.length?'&shp='+encodeURIComponent(JSON.stringify(r.shapes)):'')
     +`&crl=${c.left}&crt=${c.top}&crr=${c.right}&crb=${c.bottom}`
     +`&maxdim=1200&pv=${state.paletteVersion}`;
 }
@@ -1637,10 +1703,303 @@ function pullPageContent(sfi,spi){
   toast(msg,4500);
 }
 
+// ---- shape filler (free polygons that hide content) -----------------------
+// Each shape is {pts:[[x,y],...], color:'#rrggbb'} with points as fractions of
+// the uncropped deskewed page (post-removals) — the exact space the main
+// preview shows and the same space overlays live in. The editor renders them
+// live as an SVG layer; thumbnails and the export burn them in server-side
+// with identical maths, mapped through each render's crop insets.
+const SVG_NS='http://www.w3.org/2000/svg';
+function copyShapes(shapes){
+  return (shapes||[]).map(s=>({pts:s.pts.map(pt=>[pt[0],pt[1]]), color:s.color}));
+}
+function packShapes(shapes){          // rounded for query strings / export
+  return (shapes||[]).map(s=>({pts:s.pts.map(pt=>[+pt[0].toFixed(4),+pt[1].toFixed(4)]),
+    color:s.color}));
+}
+function shapesQuery(p){
+  const list=(p&&p.shapes)||[];
+  if(!list.length) return '';
+  return '&shp='+encodeURIComponent(JSON.stringify(packShapes(list)));
+}
+function svgEl(tag,attrs){
+  const e=document.createElementNS(SVG_NS,tag);
+  for(const k in attrs) e.setAttribute(k,attrs[k]);
+  return e;
+}
+function drawShapes(){
+  const layer=$('#shapeLayer'); if(!layer) return;
+  layer.innerHTML='';
+  const p=curPage();
+  const list=(p&&p.shapes)||[];
+  const badge=$('#shapeBadge');
+  badge.textContent=list.length;
+  badge.style.display=list.length?'':'none';
+  syncShapeList();
+  if(!p) return;
+  const img=$('#pageImg');
+  const W=img.clientWidth, H=img.clientHeight;
+  if(!W||!H) return;
+  layer.setAttribute('width',W); layer.setAttribute('height',H);
+  const px=pt=>(pt[0]*W)+','+(pt[1]*H);
+  list.forEach((s,idx)=>{
+    const poly=svgEl('polygon',{points:s.pts.map(px).join(' '),fill:s.color,
+      'class':'shp'+(idx===state.shapeSel?' sel':'')});
+    poly.addEventListener('pointerdown',ev=>shapeBodyDown(ev,idx));
+    layer.appendChild(poly);
+  });
+  // handles for the selected shape: white dots move points, purple mid-edge
+  // dots insert a new point right where you grab them — infinitely divisible.
+  const sel=list[state.shapeSel];
+  if(sel && !state.shapeDraw && !state.shapePick){
+    const n=sel.pts.length;
+    for(let j=0;j<n;j++){
+      const a=sel.pts[j], b=sel.pts[(j+1)%n];
+      const c=svgEl('circle',{cx:(a[0]+b[0])/2*W, cy:(a[1]+b[1])/2*H, r:5,
+        'class':'mid'});
+      c.addEventListener('pointerdown',ev=>midDown(ev,state.shapeSel,j));
+      layer.appendChild(c);
+    }
+    sel.pts.forEach((pt,j)=>{
+      const c=svgEl('circle',{cx:pt[0]*W, cy:pt[1]*H, r:6, 'class':'vtx'});
+      c.addEventListener('pointerdown',ev=>vtxDown(ev,state.shapeSel,j));
+      c.addEventListener('dblclick',ev=>{ ev.stopPropagation(); delVertex(state.shapeSel,j); });
+      layer.appendChild(c);
+    });
+  }
+  // in-progress polygon: dashed outline + green first point that closes it
+  if(state.shapeDraw && state.shapeDraft.length){
+    const d=state.shapeDraft;
+    const line=svgEl(d.length>2?'polygon':'polyline',
+      {points:d.map(px).join(' '),
+       fill:d.length>2?'rgba(139,92,246,.18)':'none','class':'draft-line'});
+    layer.appendChild(line);
+    d.forEach((pt,j)=>{
+      const c=svgEl('circle',{cx:pt[0]*W, cy:pt[1]*H, r:j===0?7:4,
+        'class':j===0?'v0':'vtx'});
+      if(j===0&&d.length>=3){
+        c.addEventListener('pointerdown',ev=>{
+          ev.stopPropagation(); ev.preventDefault(); finishDraft(); });
+        c.setAttribute('r',8);
+      }
+      layer.appendChild(c);
+    });
+  }
+}
+function shapeChanged(soon){
+  syncEditState();
+  if(soon){ refreshThumbSoon(state.fi,state.pi); commitSoon(); }
+  else{ refreshThumb(state.fi,state.pi); commit(); }
+}
+function shapeBodyDown(ev,idx){
+  if(state.shapeDraw||state.shapePick||state.magicMode||state.before) return;
+  ev.preventDefault(); ev.stopPropagation();
+  if(state.shapeSel!==idx){ state.shapeSel=idx; syncShapeColorUI(); drawShapes(); }
+  const s=curPage().shapes[idx];
+  const r=$('#pageImg').getBoundingClientRect();
+  const sx=ev.clientX, sy=ev.clientY;
+  const orig=s.pts.map(pt=>[...pt]);
+  let moved=false;
+  const move=e=>{
+    const dx=(e.clientX-sx)/r.width, dy=(e.clientY-sy)/r.height;
+    if(Math.abs(e.clientX-sx)+Math.abs(e.clientY-sy)>2) moved=true;
+    s.pts=orig.map(pt=>[pt[0]+dx, pt[1]+dy]);
+    drawShapes();
+  };
+  const up=()=>{
+    document.removeEventListener('pointermove',move);
+    document.removeEventListener('pointerup',up);
+    if(moved) shapeChanged();
+  };
+  document.addEventListener('pointermove',move);
+  document.addEventListener('pointerup',up);
+}
+function vtxDown(ev,idx,j){
+  if(state.shapePick||state.magicMode||state.before) return;
+  ev.preventDefault(); ev.stopPropagation();
+  const s=curPage().shapes[idx];
+  const r=$('#pageImg').getBoundingClientRect();
+  const move=e=>{
+    s.pts[j]=[Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),
+              Math.max(0,Math.min(1,(e.clientY-r.top)/r.height))];
+    drawShapes();
+  };
+  const up=()=>{
+    document.removeEventListener('pointermove',move);
+    document.removeEventListener('pointerup',up);
+    shapeChanged();
+  };
+  document.addEventListener('pointermove',move);
+  document.addEventListener('pointerup',up);
+}
+function midDown(ev,idx,j){
+  const s=curPage().shapes[idx];
+  const a=s.pts[j], b=s.pts[(j+1)%s.pts.length];
+  s.pts.splice(j+1,0,[(a[0]+b[0])/2,(a[1]+b[1])/2]);
+  vtxDown(ev,idx,j+1);       // keep dragging the newly inserted point
+}
+function delVertex(idx,j){
+  const s=curPage().shapes[idx];
+  if(s.pts.length<=3){ toast('A polygon needs at least 3 points — delete the whole shape instead'); return; }
+  s.pts.splice(j,1);
+  drawShapes(); shapeChanged();
+}
+function deleteShape(idx){
+  const p=curPage(); if(!p||!p.shapes||!p.shapes[idx]) return;
+  p.shapes.splice(idx,1);
+  if(state.shapeSel===idx) state.shapeSel=-1;
+  else if(state.shapeSel>idx) state.shapeSel--;
+  syncShapeColorUI();
+  drawShapes(); shapeChanged();
+  toast('Shape removed');
+}
+function setShapeDraw(on){
+  if(on){ setMagicMode(false); setMergePick(false);
+    if(state.shapePick) setShapePick(false);
+    state.shapeSel=-1; syncShapeColorUI(); }
+  state.shapeDraw=on;
+  if(!on) state.shapeDraft=[];
+  const b=$('#shapeDrawBtn');
+  b.classList.toggle('magic-active',on);
+  b.textContent=on?'✓ Finish polygon (Enter)':'🔷 Draw polygon';
+  $('#frame').classList.toggle('shape-draw',on);
+  drawShapes();
+}
+function setShapePick(on){
+  if(on){ setMagicMode(false); setMergePick(false);
+    if(state.shapeDraw) setShapeDraw(false); }
+  state.shapePick=on;
+  const b=$('#shapePickBtn');
+  b.classList.toggle('pick-active',on);
+  b.textContent=on?'👈 Click the page… (Esc cancels)':'💧 Pick from page';
+  $('#frame').classList.toggle('shape-pick',on);
+  drawShapes();
+}
+function finishDraft(){
+  const p=curPage();
+  if(!p) return;
+  if(state.shapeDraft.length<3){ toast('Place at least 3 points first'); return; }
+  if(!p.shapes) p.shapes=[];
+  p.shapes.push({pts:state.shapeDraft.map(pt=>[...pt]), color:state.shapeColor});
+  state.shapeDraft=[];
+  state.shapeSel=p.shapes.length-1;
+  setShapeDraw(false);
+  shapeChanged();
+  toast('Polygon added — drag the white dots to reshape it; purple dots add new points');
+}
+function setShapeColor(hex,fromPick){
+  state.shapeColor=hex;
+  $('#shapeColor').value=hex;
+  const p=curPage(), s=p&&p.shapes&&p.shapes[state.shapeSel];
+  if(s&&s.color!==hex){ s.color=hex; drawShapes(); shapeChanged(true); }
+  if(fromPick) toast('Picked '+hex+(s?' — applied to the selected polygon':' — new polygons will use it'));
+}
+// Eyedropper: the preview PNG is same-origin, so a canvas can read the exact
+// pixel that was clicked — including any colour/scan filters already applied.
+function pickColorAt(fx,fy){
+  const img=$('#pageImg');
+  if(!img.naturalWidth){ toast('Page still loading — try again'); return; }
+  try{
+    const cv=document.createElement('canvas');
+    cv.width=img.naturalWidth; cv.height=img.naturalHeight;
+    const cx=cv.getContext('2d');
+    cx.drawImage(img,0,0);
+    const X=Math.max(0,Math.min(cv.width-1,Math.round(fx*cv.width)));
+    const Y=Math.max(0,Math.min(cv.height-1,Math.round(fy*cv.height)));
+    const d=cx.getImageData(X,Y,1,1).data;
+    const hex='#'+[d[0],d[1],d[2]].map(v=>v.toString(16).padStart(2,'0')).join('');
+    setShapePick(false);
+    setShapeColor(hex,true);
+  }catch(e){ toast('Could not read the pixel colour: '+e.message); }
+}
+function syncShapeColorUI(){
+  const p=curPage(), s=p&&p.shapes&&p.shapes[state.shapeSel];
+  $('#shapeColor').value=s?s.color:state.shapeColor;
+}
+function syncShapeList(){
+  const list=$('#shapeList'); if(!list) return;
+  list.innerHTML='';
+  const p=curPage();
+  const shapes=(p&&p.shapes)||[];
+  if(!shapes.length){
+    list.innerHTML='<div class="muted">No shapes on this page yet.</div>';
+    return;
+  }
+  shapes.forEach((s,idx)=>{
+    const item=document.createElement('div');
+    item.className='rem-item';
+    item.style.cursor='pointer';
+    if(idx===state.shapeSel) item.style.borderColor='var(--acc)';
+    item.innerHTML=`<span><span class="shape-item-swatch" style="background:${s.color}"></span>
+      &nbsp;Polygon ${idx+1} · ${s.pts.length} points</span>
+      <button class="rem-del-btn" title="Delete this shape">✕</button>`;
+    item.onclick=()=>{ state.shapeSel=(state.shapeSel===idx?-1:idx);
+      syncShapeColorUI(); drawShapes(); };
+    item.querySelector('.rem-del-btn').onclick=ev=>{ ev.stopPropagation(); deleteShape(idx); };
+    list.appendChild(item);
+  });
+}
+$('#shapeDrawBtn').onclick=()=>{
+  if(!curPage()){ toast('Load a PDF first'); return; }
+  if(state.before) setBefore(false);
+  if(state.shapeDraw){
+    if(state.shapeDraft.length>=3) finishDraft();
+    else setShapeDraw(false);
+  }else setShapeDraw(true);
+};
+$('#shapePickBtn').onclick=()=>{
+  if(!curPage()){ toast('Load a PDF first'); return; }
+  if(state.before) setBefore(false);
+  setShapePick(!state.shapePick);
+  if(state.shapePick) toast('Click anywhere on the page to grab that colour');
+};
+$('#shapeColor').addEventListener('input',e=>setShapeColor(e.target.value));
+$('#shapeClearBtn').onclick=()=>{
+  const p=curPage();
+  if(!p||!(p.shapes||[]).length){ toast('No shapes on this page'); return; }
+  p.shapes=[]; state.shapeSel=-1;
+  drawShapes(); shapeChanged();
+  toast('Cleared all shapes on this page');
+};
+// Draw & pick clicks land on the frame itself (the SVG is click-through in
+// those modes). Clicking near the first point closes the polygon.
+$('#frame').addEventListener('pointerdown',ev=>{
+  if(!state.shapeDraw&&!state.shapePick) return;
+  if(state.before) return;
+  if(ev.target.closest('.guide')) return;
+  ev.preventDefault(); ev.stopPropagation();
+  const r=$('#pageImg').getBoundingClientRect();
+  const fx=Math.max(0,Math.min(1,(ev.clientX-r.left)/r.width));
+  const fy=Math.max(0,Math.min(1,(ev.clientY-r.top)/r.height));
+  if(state.shapePick){ pickColorAt(fx,fy); return; }
+  const d0=state.shapeDraft[0];
+  if(d0&&state.shapeDraft.length>=3
+     &&Math.hypot((fx-d0[0])*r.width,(fy-d0[1])*r.height)<12){ finishDraft(); return; }
+  state.shapeDraft.push([fx,fy]);
+  drawShapes();
+});
+document.addEventListener('keydown',e=>{
+  if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)) return;
+  if(e.key==='Escape'){
+    if(state.shapeDraw){ setShapeDraw(false); toast('Polygon cancelled'); return; }
+    if(state.shapePick){ setShapePick(false); return; }
+    if(state.shapeSel>=0){ state.shapeSel=-1; drawShapes(); return; }
+  }
+  if(e.key==='Enter'&&state.shapeDraw){ e.preventDefault(); finishDraft(); return; }
+  if((e.key==='Delete'||e.key==='Backspace')&&state.shapeSel>=0
+     &&!state.shapeDraw&&!state.shapePick){
+    e.preventDefault(); deleteShape(state.shapeSel);
+  }
+});
+// Anything that resizes the page image (zoom, borders, splits) re-syncs the
+// pixel-positioned SVG layer automatically.
+new ResizeObserver(()=>{ if(curPage()) drawShapes(); }).observe($('#pageImg'));
+
 function drawCrop(){
   const p=curPage(); if(!p) return;
   drawRemovals();
   drawBorder();
+  drawShapes();     // after drawBorder — it may resize the page image
   if(state.before){ $('#editState').textContent='showing original'; return; }
   const img=$('#pageImg');
   const W=img.clientWidth, H=img.clientHeight;
@@ -2199,7 +2558,7 @@ $('#pyqAppendBtn').onclick=async()=>{
     if(!r.ok) throw new Error(data.error||'append failed');
     data.pages.forEach((p,j)=>{
       f.auto.push({angle:p.angle,crop:{...p.crop}});
-      f.pages.push({src:data.start+j,angle:p.angle,rotate:0,crop:{...p.crop},removals:[],overlays:[],
+      f.pages.push({src:data.start+j,angle:p.angle,rotate:0,crop:{...p.crop},removals:[],overlays:[],shapes:[],
         color:{...DEF_COLOR},bfit:{...DEF_BFIT},deleted:false,wm:false,w:p.w,h:p.h});
     });
     f.npages=data.npages;
@@ -2598,7 +2957,8 @@ function draftState(){
     files: state.files.map(f=>({name:f.name,
       pages: f.pages.map(p=>({src:p.src, angle:p.angle, rotate:p.rotate||0, crop:{...p.crop},
         removals:[...(p.removals||[])],
-        overlays:(p.overlays||[]).map(o=>({...o})), color:{...p.color},
+        overlays:(p.overlays||[]).map(o=>({...o})),
+        shapes:copyShapes(p.shapes), color:{...p.color},
         bfit:{...(p.bfit||DEF_BFIT)}, deleted:!!p.deleted, wm:!!p.wm}))})),
     watermark:{...state.watermark},
     borders:{...state.borders},
@@ -2723,6 +3083,7 @@ function applyDraftState(s){
       p.crop={...sp.crop}; p.color={...DEF_COLOR, ...sp.color};
       p.removals=sp.removals?[...sp.removals]:[];
       p.overlays=(sp.overlays||[]).map(o=>({...o}));
+      p.shapes=copyShapes(sp.shapes);
       p.bfit={...DEF_BFIT, ...(sp.bfit||{})};
       p.deleted=!!sp.deleted; p.wm=!!sp.wm;
     });
@@ -2769,6 +3130,7 @@ $('#exportBtn').onclick=async()=>{
     settings[f.fid]={pages:f.pages.map((p,pi)=>({src:p.src??pi,angle:p.angle,rotate:p.rotate||0,
       crop:p.crop,removals:p.removals,
       overlays:(p.overlays||[]).map(ovResolve).filter(Boolean),
+      shapes:packShapes(p.shapes),
       color:p.color,bfit:p.bfit||DEF_BFIT,deleted:!!p.deleted,wm:!!p.wm}))};
   });
   const w=state.watermark, bd=state.borders;

@@ -171,6 +171,18 @@ def _overlays_from_args(args) -> list[dict]:
         return []
 
 
+def _shapes_from_args(args) -> list[dict]:
+    """Parse shape-filler polygons from query param (shp, JSON list)."""
+    raw = args.get("shp", "")
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+        return data if isinstance(data, list) else []
+    except ValueError:
+        return []
+
+
 def _removals_from_args(args) -> list[dict]:
     """Parse removals from query param (rms)."""
     raw = args.get("rms", "")
@@ -249,6 +261,10 @@ def preview():
             out, overlays, crop, palette,
             lambda ov: BASE_CACHE.get(
                 (job_id, str(ov.get("fid", "")), int(ov.get("page", 0) or 0))))
+    # Shape-filler polygons cover content under the watermark, like on export.
+    shapes = _shapes_from_args(request.args)
+    if shapes:
+        out = imaging.draw_shapes(out, shapes, crop)
     if watermark:
         sheet, centre = imaging.watermark_geometry(
             out.size, wm_crop, wm_center_margins, cropped=crop is not None)
@@ -452,6 +468,8 @@ def export():
                     processed = imaging.paste_overlays(
                         processed, ps["overlays"], crop, palette,
                         _render_overlay_src)
+                if ps.get("shapes"):
+                    processed = imaging.draw_shapes(processed, ps["shapes"], crop)
                 if watermark and (wm_scope != "page" or ps.get("wm")):
                     sheet, centre = imaging.watermark_geometry(
                         processed.size, crop, wm_center_margins, cropped=True)
