@@ -19,6 +19,7 @@ import uuid
 import tempfile
 import atexit
 import shutil
+import zipfile
 
 import fitz  # PyMuPDF
 from PIL import Image
@@ -31,6 +32,9 @@ app = Flask(__name__, static_folder="static", static_url_path="")
 
 PREVIEW_DPI = 110       # detection + on-screen preview
 DEFAULT_EXPORT_DPI = 300
+
+# Borders-tab board sentinel: export one PDF per board, zipped together.
+ALL_BOARDS = "__all__"
 
 # Board-wise previous-year-question PDFs, organised as
 # PYQs/<BOARD>/<MEDIUM>/<SUBJECT>/<CHAPTER>/*.pdf
@@ -389,9 +393,72 @@ def sample():
     return jsonify(palette)
 
 
-def _export_name(orig_name: str, bordered: bool, number: str, name: str) -> str:
-    """Chapter-based filename when borders carry chapter info, else *_fixed."""
+# ---------------------------------------------------------------------------
+# Export filenames
+#
+# Bordered exports are named "<BOARD>_<MEDIUM>_<SUBJECT>_CH<nn>-ChapterName.pdf"
+# — e.g. MP_EN_PHY_CH01-ElectricCharges.pdf. The board code is derived from the
+# cover's board name ("MP Board" -> MP); the medium (EN/HN) and subject
+# (PHY/CHEM/BIO/…) codes come straight from the Borders tab.
+# ---------------------------------------------------------------------------
+
+_WORDS = re.compile(r"[^A-Za-z0-9]+")
+
+
+def _code(value: str, limit: int = 12) -> str:
+    """Squash a label into a filename-safe upper-case code."""
+    return _WORDS.sub("", str(value or "")).upper()[:limit]
+
+
+def _board_code(board: str) -> str:
+    """'MP Board' -> 'MP'; 'UP' -> 'UP'."""
+    words = [w for w in _WORDS.split(str(board or "")) if w]
+    named = [w for w in words if w.lower() not in ("board", "boards")]
+    return _code((named or words or [""])[0], 6)
+
+
+def _camel(text: str) -> str:
+    """'Electric charges' -> 'ElectricCharges' (chapter name in filenames)."""
+    joined = "".join(w[:1].upper() + w[1:]
+                     for w in _WORDS.split(str(text or "")) if w)
+    return joined[:80]              # keep the whole name well inside 255 chars
+
+
+def _chapter_tag(number: str, name: str) -> str:
+    """'5', 'Electric charges' -> 'CH05-ElectricCharges'."""
+    num = str(number or "").strip()
+    parts = []
+    if num:
+        parts.append("CH" + (num.zfill(2) if num.isdigit() else _code(num, 6)))
+    nm = _camel(name)
+    if nm:
+        parts.append(nm)
+    return "-".join(parts)
+
+
+def _coded_name(board: str, medium: str, subject: str, number: str, name: str,
+                ext: str = ".pdf") -> str | None:
+    """Coded filename, or None when no board/medium/subject code was picked."""
+    codes = [c for c in (_board_code(board), _code(medium, 4),
+                         _code(subject, 6)) if c]
+    if not codes:
+        return None
+    tag = _chapter_tag(number, name)
+    return "_".join(codes + ([tag] if tag else [])) + ext
+
+
+def _export_name(orig_name: str, bordered: bool, number: str, name: str,
+                 board: str = "", medium: str = "", subject: str = "") -> str:
+    """
+    Coded chapter filename (MP_EN_PHY_CH01-Name.pdf) once the Borders tab
+    carries at least one of board/medium/subject; a readable
+    "Chapter 05 - Name.pdf" when it only carries chapter info; else *_fixed.
+    """
     stem = os.path.splitext(orig_name)[0]
+    if bordered:
+        coded = _coded_name(board, medium, subject, number, name)
+        if coded:
+            return coded
     if bordered and (number.strip() or name.strip()):
         parts = []
         if number.strip():
@@ -406,15 +473,54 @@ def _export_name(orig_name: str, bordered: bool, number: str, name: str) -> str:
     return stem + "_fixed.pdf"
 
 
+def _send_board_zip(pages: list, covers: list, bcfg: dict, dpi: int,
+                    orig_name: str, number: str, name: str,
+                    medium: str, subject: str):
+    """
+    "All boards": one PDF per board — identical notes, that board's cover as
+    page 1 — delivered as a single zip. The pages are rendered once and shared
+    across every PDF; only the cover differs.
+    """
+    used: set = set()
+    tmpdir = tempfile.mkdtemp(dir=WORK_DIR, prefix="zip_")
+    buf = io.BytesIO()
+    try:
+        # PDF pages are already JPEG-compressed inside the PDF, so deflating
+        # them again only burns CPU — store them as they are.
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as zf:
+            for i, (board, cover) in enumerate(covers):
+                member = _export_name(orig_name, True, number, name,
+                                      board, medium, subject)
+                if member in used:          # two boards sharing a code
+                    member = f"{os.path.splitext(member)[0]}_{i + 1}.pdf"
+                used.add(member)
+                imgs = [borders.load_cover(cover, bcfg["template_size"])
+                        .convert("RGB")] + pages
+                path = os.path.join(tmpdir, f"{i:02d}.pdf")
+                imgs[0].save(path, "PDF", resolution=float(dpi),
+                             save_all=True, append_images=imgs[1:])
+                zf.write(path, arcname=member)
+                os.remove(path)             # keep only one PDF on disk at a time
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+    buf.seek(0)
+    zname = (_coded_name("ALL", medium, subject, number, name, ".zip")
+             or os.path.splitext(orig_name)[0] + "_all_boards.zip")
+    return send_file(buf, mimetype="application/zip",
+                     as_attachment=True, download_name=zname)
+
+
 @app.route("/api/export", methods=["POST"])
 def export():
     """
     Body: {
       job, dpi?, settings: { fid: { pages: [ {angle, rotate, crop, removals} ] } },
-      borders?: { on, class, board, stream, number, name }
+      borders?: { on, class, board, stream, number, name, medium, subject }
     }
-    Always returns ONE PDF: every loaded file's pages go into the same
-    document, in rail order.
+    Every loaded file's pages go into the SAME document, in rail order, so an
+    export is one PDF — except with borders' board set to "__all__", where the
+    same document is written once per board (each with its own cover page) and
+    the set comes back as a zip.
     """
     data = request.get_json(force=True)
     job_id = data.get("job", "")
@@ -440,8 +546,14 @@ def export():
     bd_on = bool(bd.get("on"))
     bcfg = bcover = brenderer = None
     btpls: list = []
+    bcovers: list = []          # "All boards": one (board, cover) per output PDF
     bnumber = str(bd.get("number", "") or "")
     bname = str(bd.get("name", "") or "")
+    bboard = str(bd.get("board", "") or "")
+    bstream = str(bd.get("stream", "") or "")
+    bmedium = str(bd.get("medium", "") or "")
+    bsubject = str(bd.get("subject", "") or "")
+    ball = bool(bd.get("allBoards")) or bboard == ALL_BOARDS
     bzoom = borders._clampf(bd.get("zoom", 1))
     bstretch_w = borders._clampf(bd.get("stretchW", 1))
     bstretch_h = borders._clampf(bd.get("stretchH", 1))
@@ -459,9 +571,15 @@ def export():
         if not btpls:
             return jsonify({"error": f"no border templates for class {bcls} "
                             f"yet — add PNGs to borders/{bcls}/templates/"}), 400
-        bboard = str(bd.get("board", "") or "")
-        bstream = str(bd.get("stream", "") or "")
-        if bboard:
+        if ball:
+            # One PDF per board that has a cover for the picked stream
+            # (streamless classes match their board-only covers).
+            bcovers = borders.boards_with_covers(bcls, bstream)
+            if not bcovers:
+                return jsonify({"error": f"no {bcls} cover pages for "
+                                + (f"stream {bstream}" if bstream
+                                   else "the boards — pick a stream")}), 400
+        elif bboard:
             # Streamless classes (10th) store covers under the board alone;
             # a board picked without a stream where streams DO exist simply
             # exports without a cover, as before.
@@ -585,12 +703,21 @@ def export():
     if not out_images:
         return jsonify({"error": "every page is deleted — nothing to export"}), 400
 
+    orig_name = job["files"][0]["name"]
+
+    # "All boards": the notes are done — write them once per board, each with
+    # that board's cover in front, and hand back the zip.
+    if bd_on and bcovers:
+        return _send_board_zip(out_images, bcovers, bcfg, dpi, orig_name,
+                               bnumber, bname, bmedium, bsubject)
+
     # The cover belongs at the very front of the one document, not per file.
     if bd_on and bcover is not None:
         out_images.insert(0, borders.load_cover(
             bcover, bcfg["template_size"]).convert("RGB"))
 
-    out_name = _export_name(job["files"][0]["name"], bd_on, bnumber, bname)
+    out_name = _export_name(orig_name, bd_on, bnumber, bname,
+                            bboard, bmedium, bsubject)
     buf = io.BytesIO()
     out_images[0].save(buf, "PDF", resolution=float(dpi),
                        save_all=True, append_images=out_images[1:])

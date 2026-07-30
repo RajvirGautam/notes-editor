@@ -130,6 +130,20 @@ def find_cover(cls: str, board: str, stream: str) -> Path | None:
     return None
 
 
+def boards_with_covers(cls: str, stream: str = "") -> list[tuple[str, Path]]:
+    """
+    [(board, cover path)] for every board that has a cover for `stream`.
+
+    Backs the Borders tab's "All boards" export: the notes are rendered once
+    and each board gets its own PDF with its own cover as page 1. Streamless
+    classes (10th) pass stream="" and match every board-only cover.
+    """
+    fdir = class_dir(cls) / "front_pages"
+    out = [(c["board"], fdir / c["file"])
+           for c in scan_front_pages(cls) if c["stream"] == (stream or "")]
+    return sorted(out, key=lambda bc: natural_key(bc[0]))
+
+
 def load_cover(path: Path, size, bg=(255, 255, 255, 255)) -> Image.Image:
     """
     Cover image scaled to exactly `size` (the frame page size).

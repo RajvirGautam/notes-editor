@@ -850,7 +850,12 @@
           <select id="bdBoard" style="flex:1"><option value="">— no cover —</option></select></div>
         <div class="row" id="bdStreamRow"><label>Stream</label>
           <select id="bdStream" style="flex:1" disabled><option value="">— stream —</option></select></div>
+        <div class="row"><label>Medium</label>
+          <select id="bdMedium" style="flex:1"></select></div>
+        <div class="row"><label>Subject</label>
+          <select id="bdSubject" style="flex:1"></select></div>
         <div id="bdInfo" class="muted"></div>
+        <div id="bdFileInfo" class="muted" style="margin-top:6px"></div>
       </div>
     </div>
   </aside>
@@ -909,7 +914,10 @@ const state = {
   // stretchW/stretchH scale each axis on its own.
   // Global border settings; each page carries its own fit in p.bfit
   // (mode 'page'|'width'|'fill' + zoom + per-axis stretch).
-  borders:{on:false, cls:'', board:'', stream:'', number:'', name:''},
+  // board can be ALL_BOARDS — then the export is one PDF per board, zipped.
+  // medium/subject only name the exported file (MP_EN_PHY_CH01-Name.pdf).
+  borders:{on:false, cls:'', board:'', stream:'', number:'', name:'',
+           medium:'', subject:''},
   // persistent draft this session is tied to (set after a save or when a
   // draft is reopened) — re-exports update it instead of duplicating.
   draftId:null,
@@ -1028,7 +1036,8 @@ function applySnapshot(str){
   if(s.borders){
     const sb=s.borders;
     state.borders={on:!!sb.on, cls:sb.cls||state.borders.cls, board:sb.board||'',
-                   stream:sb.stream||'', number:sb.number||'', name:sb.name||''};
+                   stream:sb.stream||'', number:sb.number||'', name:sb.name||'',
+                   medium:sb.medium||'', subject:sb.subject||''};
   }
   state.palette = s.palette;
   state.paletteVersion++;                 // bust thumbnail cache after restore
@@ -1144,7 +1153,11 @@ function discardJob(){
   if(state.shapePick) setShapePick(false);
   state.before=false; state.palette=null; state.paletteVersion++;
   state.watermark={on:false, scope:'all', opacity:1, scale:1.3, rotate:0, dx:0, dy:0, centerMargins:true};
-  state.borders={on:false, cls:state.borders.cls, board:'', stream:'', number:'', name:''};
+  // class / medium / subject survive: the next PDF is usually the next chapter
+  // of the same book, and they only pick assets and the export filename.
+  state.borders={on:false, cls:state.borders.cls, board:'', stream:'',
+                 number:'', name:'', medium:state.borders.medium,
+                 subject:state.borders.subject};
   for(const k in cards) delete cards[k];
   reorderOn.clear();
   $('#railBody').innerHTML='<div class="emptyRail"><div class="er-ico">📂</div><div class="er-title">No files yet.</div><div class="muted">Add PDF files to get started.</div></div>';
@@ -3138,9 +3151,21 @@ $('#pyqBoard').onchange=async e=>{
   try{ pyqFill($('#pyqMedium'),(await pyqOptions({board:pyq.board})).dirs,'— medium —'); }
   catch(err){ toast('Error: '+err.message); }
 };
+// The PYQs tree already names the medium and subject, and the Borders tab needs
+// the same two things to name the exported file — so a PYQ pick fills them in
+// when they're still empty (an explicit choice there is never overwritten).
+const PYQ_MEDIUM_CODE={ENGLISH:'EN', HINDI:'HN'};
+const PYQ_SUBJECT_CODE={PHY:'PHY', CHEM:'CHEM', BIO:'BIO', MATHS:'MATH',
+  MATH:'MATH', ENGL:'ENG', ENGLISH:'ENG', HINDI:'HIN', HIN:'HIN', HIS:'HIS',
+  CIV:'CIV', GEO:'GEO', ECO:'ECO'};
+function pyqAdoptCode(key, code){
+  if(!code || state.borders[key]) return;
+  state.borders[key]=code; syncBordersUI(); commit();
+}
 $('#pyqMedium').onchange=async e=>{
   pyq.medium=e.target.value; pyqReset(2);
   if(!pyq.medium) return;
+  pyqAdoptCode('medium', PYQ_MEDIUM_CODE[pyq.medium.toUpperCase()]);
   try{ pyqFill($('#pyqSubject'),
     (await pyqOptions({board:pyq.board,medium:pyq.medium})).dirs,'— subject —'); }
   catch(err){ toast('Error: '+err.message); }
@@ -3148,6 +3173,7 @@ $('#pyqMedium').onchange=async e=>{
 $('#pyqSubject').onchange=async e=>{
   pyq.subject=e.target.value; pyqReset(3);
   if(!pyq.subject) return;
+  pyqAdoptCode('subject', PYQ_SUBJECT_CODE[pyq.subject.toUpperCase()]);
   try{ pyqFill($('#pyqChapter'),
     (await pyqOptions({board:pyq.board,medium:pyq.medium,subject:pyq.subject})).dirs,'— chapter —'); }
   catch(err){ toast('Error: '+err.message); }
@@ -3438,19 +3464,52 @@ function drawBorderHeader(h, sx, sy, ox, oy){
                   (h.name_min_font_size||16)*sx);
   }
 }
+// "All boards": instead of one board's cover, every board gets its own PDF of
+// the same notes and they come back zipped together. Kept in the same selector
+// as the individual boards — picking a cover and picking "one file per cover"
+// are the same choice.
+const ALL_BOARDS='__all__';
+// Filename codes (see nameForBoard below): MP_EN_PHY_CH01-ChapterName.pdf
+const MEDIUMS=[['EN','EN — English'],['HN','HN — Hindi']];
+const SUBJECTS=[['PHY','PHY — Physics'],['CHEM','CHEM — Chemistry'],
+  ['BIO','BIO — Biology'],['MATH','MATH — Maths'],['ENG','ENG — English'],
+  ['HIN','HIN — Hindi'],['HIS','HIS — History'],['CIV','CIV — Civics'],
+  ['GEO','GEO — Geography'],['ECO','ECO — Economics']];
+function isAllBoards(){ return state.borders.board===ALL_BOARDS; }
+function boardLabel(b){ return b===ALL_BOARDS?'All boards':b; }
+// Boards the "All boards" export would write, given the picked stream.
+function allBoardsList(){
+  const meta=borderMeta(); if(!meta) return [];
+  const st=state.borders.stream;
+  return meta.boards.filter(b=>{
+    const streams=meta.streams_by_board[b]||[];
+    return st ? streams.includes(st) : !streams.length;
+  });
+}
 function fillBorderBoards(){
   const meta=borderMeta(), bSel=$('#bdBoard');
   bSel.innerHTML=''; bSel.add(new Option('— no cover —',''));
   (meta?meta.boards:[]).forEach(b=>bSel.add(new Option(b,b)));
-  bSel.value=(meta&&meta.boards.includes(state.borders.board))?state.borders.board:'';
+  const boards=meta?meta.boards:[];
+  if(boards.length>1)
+    bSel.add(new Option('★ All boards — one PDF each, zipped',ALL_BOARDS));
+  const keep=state.borders.board===ALL_BOARDS
+    ? boards.length>1 : boards.includes(state.borders.board);
+  bSel.value=keep?state.borders.board:'';
   state.borders.board=bSel.value;
   fillBorderStreams();
 }
 function fillBorderStreams(){
   const meta=borderMeta(), sSel=$('#bdStream');
   sSel.innerHTML=''; sSel.add(new Option('— stream —',''));
-  const streams=(meta&&state.borders.board)
-    ?(meta.streams_by_board[state.borders.board]||[]):[];
+  // All boards: the union of every board's streams (each board then supplies
+  // its own cover for the stream picked here).
+  let streams=[];
+  if(meta&&isAllBoards())
+    meta.boards.forEach(b=>(meta.streams_by_board[b]||[]).forEach(
+      s=>{ if(!streams.includes(s)) streams.push(s); }));
+  else if(meta&&state.borders.board)
+    streams=meta.streams_by_board[state.borders.board]||[];
   streams.forEach(s=>sSel.add(new Option(s,s)));
   sSel.disabled=!streams.length;
   sSel.value=streams.includes(state.borders.stream)?state.borders.stream:'';
@@ -3458,6 +3517,59 @@ function fillBorderStreams(){
   // classes like 10th sort covers by board alone — no stream row at all
   const anyStreams=meta&&Object.values(meta.streams_by_board).some(a=>a.length);
   $('#bdStreamRow').style.display=anyStreams?'':'none';
+}
+function fillBorderCodes(){
+  const mSel=$('#bdMedium'), sSel=$('#bdSubject');
+  mSel.innerHTML=''; mSel.add(new Option('— medium —',''));
+  MEDIUMS.forEach(([c,l])=>mSel.add(new Option(l,c)));
+  sSel.innerHTML=''; sSel.add(new Option('— subject —',''));
+  SUBJECTS.forEach(([c,l])=>sSel.add(new Option(l,c)));
+  mSel.value=state.borders.medium||'';
+  sSel.value=state.borders.subject||'';
+}
+// Mirrors server.py's _export_name/_coded_name so the tab can show exactly
+// what will land in the Downloads folder.
+const codeOf=(s,n)=>String(s||'').replace(/[^A-Za-z0-9]+/g,'').toUpperCase().slice(0,n);
+const boardCode=b=>{
+  const w=String(b||'').split(/[^A-Za-z0-9]+/).filter(Boolean);
+  const named=w.filter(x=>!/^boards?$/i.test(x));
+  return codeOf((named[0]||w[0]||''),6);
+};
+function chapterTag(){
+  const b=state.borders, num=(b.number||'').trim(), parts=[];
+  if(num) parts.push('CH'+(/^\d+$/.test(num)?num.padStart(2,'0'):codeOf(num,6)));
+  const nm=String(b.name||'').split(/[^A-Za-z0-9]+/).filter(Boolean)
+    .map(w=>w[0].toUpperCase()+w.slice(1)).join('').slice(0,80);
+  if(nm) parts.push(nm);
+  return parts.join('-');
+}
+function nameForBoard(board, ext='.pdf'){
+  const b=state.borders;
+  const codes=[boardCode(board), codeOf(b.medium,4), codeOf(b.subject,6)].filter(Boolean);
+  if(!codes.length) return null;
+  const tag=chapterTag();
+  return codes.concat(tag?[tag]:[]).join('_')+ext;
+}
+function syncBorderFileInfo(){
+  const b=state.borders, box=$('#bdFileInfo');
+  if(!b.on){ box.textContent=''; return; }
+  if(isAllBoards()){
+    const boards=allBoardsList();
+    if(!boards.length){
+      box.textContent='No covers match this stream — pick a stream that exists '
+        +'for the boards, or a single board.';
+      return;
+    }
+    const names=boards.map(bd=>nameForBoard(bd)||'(pick a medium & subject)');
+    box.innerHTML=`Exports ${boards.length} PDFs in `
+      +`<b>${escapeHtml(nameForBoard('ALL','.zip')||'all_boards.zip')}</b>: `
+      +names.map(escapeHtml).join(', ');
+    return;
+  }
+  const nm=nameForBoard(b.board);
+  box.innerHTML=nm?`Exports as <b>${escapeHtml(nm)}</b>`
+    :'Pick a board, medium &amp; subject to name the file '
+     +'<b>MP_EN_PHY_CH01-ChapterName.pdf</b>.';
 }
 function syncBordersUI(){
   const b=state.borders, meta=borderMeta(), t=$('#bdToggle');
@@ -3477,16 +3589,29 @@ function syncBordersUI(){
   document.querySelectorAll('#bdFitChips .chip').forEach(chp=>
     chp.classList.toggle('active', chp.dataset.bdfit===(bf.mode||'page')));
   syncMoveUI();
+  if($('#bdMedium').value!==(b.medium||'')) $('#bdMedium').value=b.medium||'';
+  if($('#bdSubject').value!==(b.subject||'')) $('#bdSubject').value=b.subject||'';
+  syncBorderFileInfo();
   const info=$('#bdInfo');
   if(!meta){ info.textContent='No border assets found on the server (borders/ folder).'; return; }
   if(!meta.template_count){
     info.textContent=`No ${b.cls} frames yet — drop template PNGs into borders/${b.cls}/templates/ (covers go in borders/${b.cls}/front_pages/).`;
     return;
   }
+  const anyStreams=Object.values(meta.streams_by_board).some(a=>a.length);
+  const head=`${meta.template_count} frame designs cycle page by page.`;
+  if(isAllBoards()){
+    const n=allBoardsList().length;
+    info.textContent=head+(n
+      ? ` One PDF per board (${allBoardsList().join(', ')})`
+        +`${b.stream?' · '+b.stream:''} — each with its own cover as page 1,`
+        +' all zipped together.'
+      : ' Pick a stream that the boards have covers for.');
+    return;
+  }
   const streams=(b.board?meta.streams_by_board[b.board]:null)||[];
   const coverReady=b.board&&(!streams.length||b.stream);
-  const anyStreams=Object.values(meta.streams_by_board).some(a=>a.length);
-  info.textContent=`${meta.template_count} frame designs cycle page by page.`
+  info.textContent=head
     +(coverReady
       ? ` Cover “${b.board}${b.stream?' · '+b.stream:''}” is added as page 1 on export.`
       : (meta.boards.length
@@ -3512,6 +3637,12 @@ $('#bdBoard').onchange=e=>{
 };
 $('#bdStream').onchange=e=>{
   state.borders.stream=e.target.value; syncBordersUI(); commit();
+};
+$('#bdMedium').onchange=e=>{
+  state.borders.medium=e.target.value; syncBordersUI(); commit();
+};
+$('#bdSubject').onchange=e=>{
+  state.borders.subject=e.target.value; syncBordersUI(); commit();
 };
 function pageBfit(p){ return p.bfit||(p.bfit={...DEF_BFIT}); }
 $('#bdFitChips').addEventListener('click',e=>{
@@ -3552,10 +3683,12 @@ $('#bdFitReset').onclick=()=>{
   syncBordersUI(); drawBorder(); commit();
 };
 $('#bdNum').addEventListener('input',e=>{
-  state.borders.number=e.target.value; drawBorder(); commitSoon();
+  state.borders.number=e.target.value;
+  drawBorder(); syncBorderFileInfo(); commitSoon();
 });
 $('#bdName').addEventListener('input',e=>{
-  state.borders.name=e.target.value; drawBorder(); commitSoon();
+  state.borders.name=e.target.value;
+  drawBorder(); syncBorderFileInfo(); commitSoon();
 });
 
 // ---- Move (position the selected content inside the border frame) ---------
@@ -3662,7 +3795,7 @@ $('#mvApplyRemaining').onclick=()=>mvApply(true);
     c.name)));
   const def=BORDER_META.classes.find(c=>c.template_count>0)||BORDER_META.classes[0];
   if(def&&!state.borders.cls) state.borders.cls=def.name;
-  fillBorderBoards(); syncBordersUI(); drawBorder();
+  fillBorderCodes(); fillBorderBoards(); syncBordersUI(); drawBorder();
 })();
 
 // ---- nav ----------------------------------------------------------------
@@ -3715,7 +3848,7 @@ function draftAutoName(){
   if((b.number||'').trim()) parts.push('Chapter '+b.number.trim());
   if((b.name||'').trim()) parts.push(b.name.trim());
   let nm=parts.join(' - ');
-  const tags=[b.cls, b.board, b.stream].filter(s=>(s||'').trim());
+  const tags=[b.cls, boardLabel(b.board), b.stream].filter(s=>(s||'').trim());
   if(nm && b.on && tags.length) nm+=' — '+tags.join(' · ');
   if(!nm) nm=state.files.map(f=>f.name.replace(/\.pdf$/i,'')).join(', ');
   return nm||'Untitled draft';
@@ -3852,7 +3985,8 @@ function applyDraftState(s){
   if(s.borders){
     const sb=s.borders;
     state.borders={on:!!sb.on, cls:sb.cls||state.borders.cls, board:sb.board||'',
-                   stream:sb.stream||'', number:sb.number||'', name:sb.name||''};
+                   stream:sb.stream||'', number:sb.number||'', name:sb.name||'',
+                   medium:sb.medium||'', subject:sb.subject||''};
   }
   state.palette=s.palette||null; state.paletteVersion++;
   if(s.palette) showPalette(s.palette);
@@ -3900,12 +4034,18 @@ $('#exportBtn').onclick=async()=>{
     wmOpacity:w.opacity, wmScale:w.scale, wmRotate:w.rotate,
     wmDx:w.dx, wmDy:w.dy, wmCenterMargins:w.centerMargins,
     borders:{on:bd.on, class:bd.cls, board:bd.board, stream:bd.stream,
-             number:bd.number, name:bd.name}};
+             number:bd.number, name:bd.name,
+             medium:bd.medium, subject:bd.subject,
+             // one PDF per board, zipped
+             allBoards:bd.board===ALL_BOARDS}};
   const nDel=deletedCount();
   // Snapshot the session into History the moment Export is clicked — the
   // draft (PDFs + every edit) is kept even if the render fails midway.
   const saved=await saveDraft(true, true);
-  const t=toast('<span class="spinner"></span> Rendering PDF(s) at full resolution…'
+  const nAll=(bd.on&&bd.board===ALL_BOARDS)?allBoardsList().length:0;
+  const t=toast('<span class="spinner"></span> '
+    +(nAll?`Rendering ${nAll} board PDFs at full resolution…`
+          :'Rendering PDF(s) at full resolution…')
     +(nDel?` <span class="muted">(skipping ${nDel} deleted page${nDel>1?'s':''})</span>`:''),0);
   try{
     const r=await fetch('/api/export',{method:'POST',
@@ -3918,11 +4058,12 @@ $('#exportBtn').onclick=async()=>{
     const blob=await r.blob();
     const cd=r.headers.get('Content-Disposition')||'';
     const m=cd.match(/filename="?([^"]+)"?/);
-    const name=m?m[1]:'notes_fixed.pdf';
+    const name=m?m[1]:(nAll?'all_boards.zip':'notes_fixed.pdf');
     const url=URL.createObjectURL(blob);
     const a=document.createElement('a');a.href=url;a.download=name;a.click();
     URL.revokeObjectURL(url);
-    toast('✅ Exported '+name+(saved?' — saved to 🕘 History':''));
+    toast('✅ Exported '+name+(nAll?` — ${nAll} board PDFs inside`:'')
+      +(saved?' — saved to 🕘 History':''));
   }catch(e){ toast('Error: '+e.message); }
   finally{ t.remove(); }
 };
