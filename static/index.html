@@ -217,6 +217,20 @@
     border-top-color:var(--acc);border-radius:50%;display:inline-block;
     animation:spin .7s linear infinite;vertical-align:-3px}
   @keyframes spin{to{transform:rotate(360deg)}}
+  /* toast with a measured progress bar (page analysis, PYQ append, drafts) */
+  .prog{min-width:250px;max-width:340px}
+  .prog-top{display:flex;align-items:center;gap:8px}
+  .prog-count{margin-left:auto;font-size:12px;font-weight:600;
+    font-variant-numeric:tabular-nums;color:var(--acc);white-space:nowrap}
+  .prog-bar{height:6px;margin-top:9px;border-radius:99px;background:var(--line);
+    overflow:hidden}
+  .prog-bar i{display:block;height:100%;width:0;border-radius:99px;
+    background:var(--acc);transition:width .2s linear}
+  /* no total yet (still reading the upload) — sweep instead of sitting at 0 */
+  .prog-bar.indet i{width:38%;animation:sweep 1.1s ease-in-out infinite}
+  @keyframes sweep{from{margin-left:-38%}to{margin-left:100%}}
+  .prog-sub{margin-top:6px;white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis}
   .muted{color:var(--mut);font-size:12px}
   /* slider rows in the colour panel */
   .crow{display:grid;grid-template-columns:1fr auto;align-items:center;
@@ -931,6 +945,54 @@ function toast(msg, ms=2600){
   if(ms) setTimeout(()=>t.remove(), ms);
   return t;
 }
+// A sticky toast with a real progress bar, for waits the server can measure.
+// Call t.set({done,total,label}) as news comes in; until a total is known the
+// bar sweeps, so it still reads as "working" rather than "stuck at zero".
+function progressToast(title, unit='pages'){
+  const t=toast('<div class="prog">'
+    +'<div class="prog-top"><span class="spinner"></span>'
+    +`<span>${title}</span><span class="prog-count"></span></div>`
+    +'<div class="prog-bar indet"><i></i></div>'
+    +'<div class="prog-sub muted"></div></div>', 0);
+  const bar=t.querySelector('.prog-bar'), fill=t.querySelector('.prog-bar i'),
+        count=t.querySelector('.prog-count'), sub=t.querySelector('.prog-sub');
+  t.set=({done=0,total=0,label=''}={})=>{
+    if(total>0){
+      bar.classList.remove('indet');
+      fill.style.width=Math.min(100, done/total*100).toFixed(1)+'%';
+      count.textContent=`${done}/${total} ${unit}`;
+    }else{
+      bar.classList.add('indet'); fill.style.width=''; count.textContent='';
+    }
+    sub.textContent=label;
+    sub.style.display=label?'':'none';
+  };
+  t.set();
+  return t;
+}
+// Requests that analyse pages report done/total under a token we make up and
+// send along with them. Poll it while the request is in flight so the wait
+// shows "6/21 pages" instead of an indeterminate spinner. Returns a stopper —
+// always call it in a finally, or the poll outlives the request.
+function progressToken(){
+  return crypto.randomUUID ? crypto.randomUUID()
+       : Math.random().toString(36).slice(2)+Date.now().toString(36);
+}
+function pollProgress(token, t){
+  let live=true;
+  (async()=>{
+    while(live){
+      await new Promise(r=>setTimeout(r, 350));
+      if(!live) break;
+      try{
+        const p=await (await fetch('/api/progress?token='
+                                   +encodeURIComponent(token))).json();
+        if(live && !p.unknown) t.set(p);
+      }catch(e){ /* server busy mid-page — just try again */ }
+    }
+  })();
+  return ()=>{ live=false; };
+}
 function curFile(){ return state.files[state.fi]; }
 function curPage(){ const f=curFile(); return f? f.pages[state.pi]:null; }
 function pageEdited(f,i){
@@ -1074,7 +1136,9 @@ async function uploadFiles(fileList){
   const cur = state.job ? curFile() : null;
   const appending = !!cur;
   if(appending){ fd.append('job', state.job); fd.append('fid', cur.fid); }
-  const t=toast(`<span class="spinner"></span> Analysing ${pdfs.length} PDF(s)…`,0);
+  const token=progressToken(); fd.append('ptoken', token);
+  const t=progressToast(`Analysing ${pdfs.length} PDF(s)…`);
+  const stopPoll=pollProgress(token, t);
   try{
     const r=await fetch('/api/upload',{method:'POST',body:fd});
     const data=await r.json();
@@ -1087,7 +1151,7 @@ async function uploadFiles(fileList){
       ingest(data);
     }
   }catch(e){ toast('Error: '+e.message); }
-  finally{ t.remove(); }
+  finally{ stopPoll(); t.remove(); }
 }
 // Turn an /api/upload file payload into the editor's working shape.
 // src = the page's index inside the working PDF; it never changes, so pages
@@ -3195,12 +3259,15 @@ $('#pyqChapter').onchange=async e=>{
 $('#pyqAppendBtn').onclick=async()=>{
   const f=curFile();
   if(!state.job||!f){ toast('Load a theory PDF first, then append PYQs'); return; }
-  const t=toast('<span class="spinner"></span> Appending & auto-margining PYQs…',0);
+  const token=progressToken();
+  const t=progressToast('Appending & auto-margining PYQs…');
+  const stopPoll=pollProgress(token, t);
   try{
     const r=await fetch('/api/pyqs/append',{method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({job:state.job,fid:f.fid,board:pyq.board,
-        medium:pyq.medium,subject:pyq.subject,chapter:pyq.chapter})});
+        medium:pyq.medium,subject:pyq.subject,chapter:pyq.chapter,
+        ptoken:token})});
     const data=await r.json();
     if(!r.ok) throw new Error(data.error||'append failed');
     data.pages.forEach((p,j)=>{
@@ -3214,7 +3281,7 @@ $('#pyqAppendBtn').onclick=async()=>{
     commit();
     toast(`✅ Appended ${data.sources.length} PYQ PDF(s) — ${data.pages.length} page(s) added to ${f.name}`);
   }catch(e){ toast('Error: '+e.message); }
-  finally{ t.remove(); }
+  finally{ stopPoll(); t.remove(); }
 };
 (async function initPyqBoards(){
   try{ pyqFill($('#pyqBoard'),(await pyqOptions({})).dirs,'— board —'); }
@@ -4002,9 +4069,12 @@ async function openDraft(id){
   if(state.files.length &&
      !confirm('Opening this draft replaces the PDFs currently loaded '
               +'(save them as a draft first if needed). Continue?')) return;
-  const t=toast('<span class="spinner"></span> Reopening draft…',0);
+  const token=progressToken();
+  const t=progressToast('Reopening draft…');
+  const stopPoll=pollProgress(token, t);
   try{
-    const r=await fetch(`/api/drafts/${id}/open`,{method:'POST'});
+    const r=await fetch(`/api/drafts/${id}/open?ptoken=`
+                        +encodeURIComponent(token),{method:'POST'});
     const data=await r.json();
     if(!r.ok) throw new Error(data.error||'could not open draft');
     hideHistory();
@@ -4013,7 +4083,7 @@ async function openDraft(id){
     applyDraftState(data.state||{});    // …then restore every edit on top
     toast('✅ Draft “'+(data.name||'')+'” reopened — all edits restored');
   }catch(e){ toast('Error: '+e.message); }
-  finally{ t.remove(); }
+  finally{ stopPoll(); t.remove(); }
 }
 
 // ---- export -------------------------------------------------------------

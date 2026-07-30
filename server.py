@@ -63,6 +63,54 @@ JOBS: dict = {}
 # (job_id, fid, page) -> deskew-DPI base raster (PIL RGB), before any rotation
 BASE_CACHE: dict = {}
 
+# Analysing a page (render + skew detect + margin scan) takes a moment, so a
+# 40-page upload is a long silent wait. Requests that do it publish a live
+# page counter here under a token the client makes up and sends along; the
+# client polls /api/progress with that token and draws a real bar.
+# token -> {done, total, label, ts}
+PROGRESS: dict = {}
+PROGRESS_TTL = 600.0        # forget tokens whose request died without cleanup
+
+
+@contextlib.contextmanager
+def _progress(token: str, total: int = 0, label: str = ""):
+    """
+    Publish page progress for one request under `token`, and always forget it
+    when the request ends. Yields the dict to tick (None if the client sent no
+    token, which every progress-aware helper treats as "don't report").
+    """
+    if not token:
+        yield None
+        return
+    cutoff = time.time() - PROGRESS_TTL
+    for stale in [t for t, p in PROGRESS.items() if p["ts"] < cutoff]:
+        PROGRESS.pop(stale, None)
+    prog = {"done": 0, "total": int(total), "label": label, "ts": time.time()}
+    PROGRESS[token] = prog
+    try:
+        yield prog
+    finally:
+        PROGRESS.pop(token, None)
+
+
+@app.route("/api/progress")
+def progress():
+    """
+    Progress of a long request, by the token the client sent with it. An
+    unknown token is a normal answer rather than an error — the request may
+    not have reached the server yet, or may already be finishing up.
+    """
+    prog = PROGRESS.get((request.args.get("token") or "").strip())
+    if prog is None:
+        return jsonify({"unknown": True})
+    return jsonify({"done": prog["done"], "total": prog["total"],
+                    "label": prog["label"]})
+
+
+def _page_count(path: str) -> int:
+    with contextlib.closing(fitz.open(path)) as doc:
+        return doc.page_count
+
 
 def _job(job_id: str) -> dict:
     job = JOBS.get(job_id)
@@ -83,12 +131,18 @@ def index():
     return app.send_static_file("index.html")
 
 
-def _analyse_pages(job_id: str, fid: str, path: str, start: int = 0) -> list:
+def _analyse_pages(job_id: str, fid: str, path: str, start: int = 0,
+                   prog: dict | None = None, label: str = "") -> list:
     """
     Auto-deskew + auto-margin pages [start:] of a working PDF and cache their
     base rasters. Returns the per-page dicts the editor works with.
+
+    `prog` (from _progress) is ticked once per finished page, so a caller
+    polling /api/progress sees the count climb through this loop.
     """
     doc = fitz.open(path)
+    if prog is not None and label:
+        prog["label"] = label
     pages = []
     for i in range(start, doc.page_count):
         base = imaging.render_page(doc, i, PREVIEW_DPI)
@@ -103,11 +157,15 @@ def _analyse_pages(job_id: str, fid: str, path: str, start: int = 0) -> list:
             "w": deskewed.width,
             "h": deskewed.height,
         })
+        if prog is not None:
+            prog["done"] += 1
+            prog["ts"] = time.time()
     doc.close()
     return pages
 
 
-def _append_uploads(job_id: str, f: dict, uploads: list):
+def _append_uploads(job_id: str, f: dict, uploads: list,
+                    prog: dict | None = None):
     """
     Merge uploaded PDFs onto the END of one working PDF, then analyse just the
     pages that appeared. The pages become part of that same document — they
@@ -127,12 +185,16 @@ def _append_uploads(job_id: str, f: dict, uploads: list):
         doc.insert_pdf(src)
         src.close()
         names.append(up.filename)
+    added = doc.page_count - start
     tmp = f["path"] + ".tmp"
     doc.save(tmp)
     doc.close()
     os.replace(tmp, f["path"])
 
-    new_pages = _analyse_pages(job_id, f["fid"], f["path"], start)
+    if prog is not None:
+        prog["total"] = added
+    new_pages = _analyse_pages(job_id, f["fid"], f["path"], start,
+                               prog=prog, label=f["name"])
     f["pages"].extend(new_pages)
     f["npages"] = len(f["pages"])
     return jsonify({"job": job_id, "appended": True, "fid": f["fid"],
@@ -154,29 +216,47 @@ def upload():
     # happened via "appended".
     job_id = (request.form.get("job") or "").strip()
     fid = (request.form.get("fid") or "").strip()
-    job = JOBS.get(job_id)
-    if job and fid:
-        target = next((f for f in job["files"] if f["fid"] == fid), None)
-        if target is not None:
-            return _append_uploads(job_id, target, uploads)
+    token = (request.form.get("ptoken") or "").strip()
 
+    with _progress(token, 0, f"Reading {len(uploads)} PDF(s)…") as prog:
+        job = JOBS.get(job_id)
+        if job and fid:
+            target = next((f for f in job["files"] if f["fid"] == fid), None)
+            if target is not None:
+                return _append_uploads(job_id, target, uploads, prog)
+        return _new_job(uploads, prog)
+
+
+def _new_job(uploads: list, prog: dict | None = None):
+    """
+    Start a fresh job from uploaded PDFs. Every page count is read before any
+    analysis, so a client polling progress gets a real denominator on its very
+    first tick instead of watching the total grow file by file.
+    """
     job_id = uuid.uuid4().hex[:12]
     job_dir = os.path.join(WORK_DIR, job_id)
     os.makedirs(job_dir, exist_ok=True)
-    files = []
 
+    stored = []
     for up in uploads:
         fid = uuid.uuid4().hex[:8]
         path = os.path.join(job_dir, f"{fid}.pdf")
         up.save(path)
-        pages = _analyse_pages(job_id, fid, path)
-        files.append({
-            "fid": fid,
-            "name": up.filename,
-            "path": path,
-            "npages": len(pages),
-            "pages": pages,
-        })
+        try:
+            npages = _page_count(path)
+        except Exception:
+            return jsonify({"error": f"{up.filename} is not a readable PDF"}), 400
+        stored.append({"fid": fid, "name": up.filename, "path": path,
+                       "npages": npages})
+
+    if prog is not None:
+        prog["total"] = sum(s["npages"] for s in stored)
+
+    files = []
+    for s in stored:
+        pages = _analyse_pages(job_id, s["fid"], s["path"],
+                               prog=prog, label=s["name"])
+        files.append({**s, "npages": len(pages), "pages": pages})
 
     if not files:
         return jsonify({"error": "no valid PDFs"}), 400
@@ -864,7 +944,7 @@ def drafts_open(did: str):
     job_dir = os.path.join(WORK_DIR, job_id)
     os.makedirs(job_dir, exist_ok=True)
 
-    files = []
+    copied = []
     for fm in meta.get("files", []):
         src = os.path.join(ddir, "files", fm["stored"])
         if not os.path.isfile(src):
@@ -873,15 +953,17 @@ def drafts_open(did: str):
         path = os.path.join(job_dir, f"{fid}.pdf")
         # Work on a copy — later edits/PYQ appends must never touch the draft.
         shutil.copyfile(src, path)
+        copied.append({"fid": fid, "name": fm["name"], "path": path})
 
-        pages = _analyse_pages(job_id, fid, path)
-        files.append({
-            "fid": fid,
-            "name": fm["name"],
-            "path": path,
-            "npages": len(pages),
-            "pages": pages,
-        })
+    token = (request.args.get("ptoken") or "").strip()
+    with _progress(token, 0, "Reopening draft…") as prog:
+        if prog is not None:
+            prog["total"] = sum(_page_count(c["path"]) for c in copied)
+        files = []
+        for c in copied:
+            pages = _analyse_pages(job_id, c["fid"], c["path"],
+                                   prog=prog, label=c["name"])
+            files.append({**c, "npages": len(pages), "pages": pages})
 
     if not files:
         return jsonify({"error": "draft has no PDFs on disk"}), 404
@@ -970,12 +1052,16 @@ def pyqs_append():
         src = fitz.open(os.path.join(folder, name))
         doc.insert_pdf(src)
         src.close()
+    added = doc.page_count - start
     tmp = f["path"] + ".tmp"
     doc.save(tmp)
     doc.close()
     os.replace(tmp, f["path"])
 
-    new_pages = _analyse_pages(job_id, f["fid"], f["path"], start)
+    token = str(data.get("ptoken") or "").strip()
+    with _progress(token, added, f["name"]) as prog:
+        new_pages = _analyse_pages(job_id, f["fid"], f["path"], start,
+                                   prog=prog, label=f["name"])
     f["pages"].extend(new_pages)
     f["npages"] = len(f["pages"])
 
