@@ -142,13 +142,14 @@
     background:var(--panel);overflow-y:auto;padding:16px}
   /* quick-apply bar — floats inside the editor under the undo/redo buttons;
      shortcuts to the batch "→ all pages / → remaining" actions in the panel */
-  #quickbar{position:absolute;top:10px;right:14px;z-index:30;display:flex;
-    align-items:center;gap:6px;background:var(--panel);
+  #quickbar{position:absolute;top:10px;right:14px;z-index:30;display:grid;
+    grid-template-columns:auto 1fr 1fr;align-items:center;gap:5px 6px;
+    background:var(--panel);
     border:1px solid var(--line);border-radius:9px;padding:6px 8px;
     box-shadow:0 4px 16px rgba(0,0,0,.45)}
   #quickbar .qlbl{font-size:11px;text-transform:uppercase;letter-spacing:.5px;
-    color:var(--mut);font-weight:600;margin:0 2px 0 4px}
-  #quickbar .qsep{width:1px;align-self:stretch;background:var(--line);margin:0 4px}
+    color:var(--mut);font-weight:600;margin:0 2px}
+  #quickbar .qsep{grid-column:1/-1;height:1px;background:var(--line);margin:1px 0}
   #quickbar button{padding:5px 9px;font-size:12px;white-space:nowrap}
   #stage:has(#drop:not(.hidden)) #quickbar{display:none}
   .sec{margin-bottom:12px;border:1px solid var(--line);border-radius:14px;
@@ -1058,14 +1059,59 @@ async function uploadFiles(fileList){
   if(!pdfs.length){ toast('No PDF files selected'); return; }
   const fd=new FormData();
   pdfs.forEach(f=>fd.append('files', f));
+  // With a PDF already open ("+ Add PDFs"), hand the server that job and the
+  // file being viewed: the new pages are merged onto the END of that same
+  // document, so they export inside the original PDF rather than alongside it.
+  const cur = state.job ? curFile() : null;
+  const appending = !!cur;
+  if(appending){ fd.append('job', state.job); fd.append('fid', cur.fid); }
   const t=toast(`<span class="spinner"></span> Analysing ${pdfs.length} PDF(s)…`,0);
   try{
     const r=await fetch('/api/upload',{method:'POST',body:fd});
     const data=await r.json();
     if(!r.ok){ throw new Error(data.error||'upload failed'); }
-    ingest(data);
+    if(data.appended) appendPages(data);
+    else{
+      // asked to append but the job is gone (server restarted) — the loaded
+      // pages can no longer be rendered either, so start over on the new one
+      if(appending) toast('Previous session expired on the server — opened as a new set');
+      ingest(data);
+    }
   }catch(e){ toast('Error: '+e.message); }
   finally{ t.remove(); }
+}
+// Turn an /api/upload file payload into the editor's working shape.
+// src = the page's index inside the working PDF; it never changes, so pages
+// can be reordered freely while previews/exports keep pointing at the right
+// PDF page. auto = the original detected settings, so "Auto" can reset.
+function prepFile(f){
+  f.auto=f.pages.map(p=>({angle:p.angle, crop:{...p.crop}}));
+  f.pages=f.pages.map((p,i)=>({src:i, angle:p.angle, rotate:0, crop:{...p.crop},
+    removals: p.removals ? [...p.removals] : [], overlays:[], shapes:[],
+    color:{...DEF_COLOR}, bfit:{...DEF_BFIT}, deleted:false, wmo:null, w:p.w, h:p.h}));
+  return f;
+}
+// "+ Add PDFs" with a PDF already open: the server merged the new pages into
+// that working PDF, so here they are just pushed onto the end of its page
+// list — one document, one export. Nothing already loaded is touched: every
+// edit, the palette, the watermark and the undo history all stay.
+function appendPages(data){
+  const f=state.files.find(x=>x.fid===data.fid);
+  if(!f){ toast('Could not find the PDF to append to'); return; }
+  (data.pages||[]).forEach((p,j)=>{
+    f.auto.push({angle:p.angle, crop:{...p.crop}});
+    f.pages.push({src:data.start+j, angle:p.angle, rotate:0, crop:{...p.crop},
+      removals: p.removals ? [...p.removals] : [], overlays:[], shapes:[],
+      color:{...DEF_COLOR}, bfit:{...DEF_BFIT}, deleted:false, wmo:null, w:p.w, h:p.h});
+  });
+  f.npages=data.npages;
+  state.fi=state.files.indexOf(f);
+  state.pi=Math.max(0, f.pages.length-(data.pages||[]).length);  // 1st new page
+  renderRail(); setActiveCard(); loadPage();
+  syncJobInfo(); syncDeletedUI(); syncPyqBtn();
+  commit();
+  toast(`✅ Added ${(data.sources||[]).length} PDF(s) — `
+       +`${(data.pages||[]).length} page(s) appended to ${f.name}`);
 }
 function ingest(data){
   if(!state.job){ state.job=data.job; }
@@ -1075,16 +1121,7 @@ function ingest(data){
   state.draftId=null;               // fresh upload = fresh draft on next export
   // the old job's pages are gone — an unclosed polygon has nowhere to land
   state.shapeDraft=[]; state.shapeDraftAt=null;
-  // store auto (original) settings separately so "Auto" can reset
-  data.files.forEach(f=>{
-    f.auto=f.pages.map(p=>({angle:p.angle, crop:{...p.crop}}));
-    // src = the page's index inside the working PDF; it never changes, so
-    // pages can be reordered freely while previews/exports keep pointing at
-    // the right PDF page.
-    f.pages=f.pages.map((p,i)=>({src:i, angle:p.angle, rotate:0, crop:{...p.crop}, removals: p.removals ? [...p.removals] : [],
-      overlays:[], shapes:[],
-      color:{...DEF_COLOR}, bfit:{...DEF_BFIT}, deleted:false, wmo:null, w:p.w, h:p.h}));
-  });
+  data.files.forEach(prepFile);
   state.files=data.files;
   state.fi=0; state.pi=0;
   reorderOn.clear();

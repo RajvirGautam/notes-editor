@@ -16,7 +16,6 @@ import os
 import re
 import time
 import uuid
-import zipfile
 import tempfile
 import atexit
 import shutil
@@ -80,11 +79,82 @@ def index():
     return app.send_static_file("index.html")
 
 
+def _analyse_pages(job_id: str, fid: str, path: str, start: int = 0) -> list:
+    """
+    Auto-deskew + auto-margin pages [start:] of a working PDF and cache their
+    base rasters. Returns the per-page dicts the editor works with.
+    """
+    doc = fitz.open(path)
+    pages = []
+    for i in range(start, doc.page_count):
+        base = imaging.render_page(doc, i, PREVIEW_DPI)
+        angle = imaging.detect_skew(base)
+        deskewed = imaging.deskew_image(base, angle)
+        crop = imaging.content_bbox_fractions(deskewed)
+        BASE_CACHE[(job_id, fid, i)] = base
+        pages.append({
+            "angle": angle,
+            "crop": crop,
+            "removals": [],
+            "w": deskewed.width,
+            "h": deskewed.height,
+        })
+    doc.close()
+    return pages
+
+
+def _append_uploads(job_id: str, f: dict, uploads: list):
+    """
+    Merge uploaded PDFs onto the END of one working PDF, then analyse just the
+    pages that appeared. The pages become part of that same document — they
+    export inside the original PDF instead of as a separate file — and are
+    editable like any other page.
+    """
+    doc = fitz.open(f["path"])
+    start = doc.page_count
+    names = []
+    for up in uploads:
+        blob = up.read()
+        try:
+            src = fitz.open(stream=blob, filetype="pdf")
+        except Exception:
+            doc.close()
+            return jsonify({"error": f"{up.filename} is not a readable PDF"}), 400
+        doc.insert_pdf(src)
+        src.close()
+        names.append(up.filename)
+    tmp = f["path"] + ".tmp"
+    doc.save(tmp)
+    doc.close()
+    os.replace(tmp, f["path"])
+
+    new_pages = _analyse_pages(job_id, f["fid"], f["path"], start)
+    f["pages"].extend(new_pages)
+    f["npages"] = len(f["pages"])
+    return jsonify({"job": job_id, "appended": True, "fid": f["fid"],
+                    "start": start, "npages": f["npages"],
+                    "pages": new_pages, "sources": names})
+
+
 @app.route("/api/upload", methods=["POST"])
 def upload():
-    uploads = request.files.getlist("files")
+    uploads = [up for up in request.files.getlist("files")
+               if (up.filename or "").lower().endswith(".pdf")]
     if not uploads:
-        return jsonify({"error": "no files"}), 400
+        return jsonify({"error": "no PDF files"}), 400
+
+    # "+ Add PDFs" sends the open job and the PDF being viewed: the new pages
+    # are then merged onto the end of THAT document, so they stay one PDF and
+    # still export as one file (not a zip of separate PDFs). An unknown or
+    # expired job falls back to a fresh job — the client is told which
+    # happened via "appended".
+    job_id = (request.form.get("job") or "").strip()
+    fid = (request.form.get("fid") or "").strip()
+    job = JOBS.get(job_id)
+    if job and fid:
+        target = next((f for f in job["files"] if f["fid"] == fid), None)
+        if target is not None:
+            return _append_uploads(job_id, target, uploads)
 
     job_id = uuid.uuid4().hex[:12]
     job_dir = os.path.join(WORK_DIR, job_id)
@@ -92,29 +162,10 @@ def upload():
     files = []
 
     for up in uploads:
-        if not up.filename.lower().endswith(".pdf"):
-            continue
         fid = uuid.uuid4().hex[:8]
         path = os.path.join(job_dir, f"{fid}.pdf")
         up.save(path)
-
-        doc = fitz.open(path)
-        pages = []
-        for i in range(doc.page_count):
-            base = imaging.render_page(doc, i, PREVIEW_DPI)
-            angle = imaging.detect_skew(base)
-            deskewed = imaging.deskew_image(base, angle)
-            crop = imaging.content_bbox_fractions(deskewed)
-            BASE_CACHE[(job_id, fid, i)] = base
-            pages.append({
-                "angle": angle,
-                "crop": crop,
-                "removals": [],
-                "w": deskewed.width,
-                "h": deskewed.height,
-            })
-        doc.close()
-
+        pages = _analyse_pages(job_id, fid, path)
         files.append({
             "fid": fid,
             "name": up.filename,
@@ -133,7 +184,7 @@ def upload():
         "fid": f["fid"], "name": f["name"], "npages": f["npages"],
         "pages": f["pages"],
     } for f in files]
-    return jsonify({"job": job_id, "files": payload_files})
+    return jsonify({"job": job_id, "files": payload_files, "appended": False})
 
 
 def _color_from_args(args) -> dict:
@@ -338,8 +389,7 @@ def sample():
     return jsonify(palette)
 
 
-def _export_name(orig_name: str, bordered: bool, number: str, name: str,
-                 nfiles: int) -> str:
+def _export_name(orig_name: str, bordered: bool, number: str, name: str) -> str:
     """Chapter-based filename when borders carry chapter info, else *_fixed."""
     stem = os.path.splitext(orig_name)[0]
     if bordered and (number.strip() or name.strip()):
@@ -349,8 +399,6 @@ def _export_name(orig_name: str, bordered: bool, number: str, name: str,
         if name.strip():
             parts.append(name.strip())
         base = " - ".join(parts)
-        if nfiles > 1:
-            base = f"{base} - {stem}"
         base = re.sub(r'[\\/:*?"<>|]+', "", base)
         base = re.sub(r"\s+", " ", base).strip()
         if base:
@@ -365,7 +413,8 @@ def export():
       job, dpi?, settings: { fid: { pages: [ {angle, rotate, crop, removals} ] } },
       borders?: { on, class, board, stream, number, name }
     }
-    Returns a single PDF (one file) or a zip (multiple files).
+    Always returns ONE PDF: every loaded file's pages go into the same
+    document, in rail order.
     """
     data = request.get_json(force=True)
     job_id = data.get("job", "")
@@ -421,7 +470,9 @@ def export():
                 return jsonify({"error": f"no cover page for {bboard} / {bstream}"}), 400
         brenderer = borders.HeaderRenderer(bcfg, bnumber, bname)
 
-    outputs = []  # (filename, bytes)
+    # Every loaded PDF exports into ONE document, in rail order — an export is
+    # always a single PDF, never a zip of separate ones.
+    out_images = []
 
     # Merged-page overlays reference source pages by fid+page; they may live in
     # any loaded PDF, so keep one lazily-opened doc per fid for the whole export.
@@ -526,36 +577,26 @@ def export():
 
             if not images:
                 continue              # every page of this PDF was deleted
-
-            if bd_on and bcover is not None:
-                images.insert(0, borders.load_cover(
-                    bcover, bcfg["template_size"]).convert("RGB"))
-
-            out_name = _export_name(f["name"], bd_on, bnumber, bname,
-                                    len(job["files"]))
-            buf = io.BytesIO()
-            images[0].save(buf, "PDF", resolution=float(dpi),
-                           save_all=True, append_images=images[1:])
-            outputs.append((out_name, buf.getvalue()))
+            out_images.extend(images)
 
     for d in src_docs.values():
         d.close()
 
-    if not outputs:
+    if not out_images:
         return jsonify({"error": "every page is deleted — nothing to export"}), 400
 
-    if len(outputs) == 1:
-        name, blob = outputs[0]
-        return send_file(io.BytesIO(blob), mimetype="application/pdf",
-                         as_attachment=True, download_name=name)
+    # The cover belongs at the very front of the one document, not per file.
+    if bd_on and bcover is not None:
+        out_images.insert(0, borders.load_cover(
+            bcover, bcfg["template_size"]).convert("RGB"))
 
-    zbuf = io.BytesIO()
-    with zipfile.ZipFile(zbuf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for name, blob in outputs:
-            zf.writestr(name, blob)
-    zbuf.seek(0)
-    return send_file(zbuf, mimetype="application/zip",
-                     as_attachment=True, download_name="notes_fixed.zip")
+    out_name = _export_name(job["files"][0]["name"], bd_on, bnumber, bname)
+    buf = io.BytesIO()
+    out_images[0].save(buf, "PDF", resolution=float(dpi),
+                       save_all=True, append_images=out_images[1:])
+    buf.seek(0)
+    return send_file(buf, mimetype="application/pdf",
+                     as_attachment=True, download_name=out_name)
 
 
 # ---------------------------------------------------------------------------
@@ -706,22 +747,7 @@ def drafts_open(did: str):
         # Work on a copy — later edits/PYQ appends must never touch the draft.
         shutil.copyfile(src, path)
 
-        doc = fitz.open(path)
-        pages = []
-        for i in range(doc.page_count):
-            base = imaging.render_page(doc, i, PREVIEW_DPI)
-            angle = imaging.detect_skew(base)
-            deskewed = imaging.deskew_image(base, angle)
-            crop = imaging.content_bbox_fractions(deskewed)
-            BASE_CACHE[(job_id, fid, i)] = base
-            pages.append({
-                "angle": angle,
-                "crop": crop,
-                "removals": [],
-                "w": deskewed.width,
-                "h": deskewed.height,
-            })
-        doc.close()
+        pages = _analyse_pages(job_id, fid, path)
         files.append({
             "fid": fid,
             "name": fm["name"],
@@ -822,24 +848,8 @@ def pyqs_append():
     doc.close()
     os.replace(tmp, f["path"])
 
-    doc = fitz.open(f["path"])
-    new_pages = []
-    for i in range(start, doc.page_count):
-        base = imaging.render_page(doc, i, PREVIEW_DPI)
-        angle = imaging.detect_skew(base)
-        deskewed = imaging.deskew_image(base, angle)
-        crop = imaging.content_bbox_fractions(deskewed)
-        BASE_CACHE[(job_id, f["fid"], i)] = base
-        page = {
-            "angle": angle,
-            "crop": crop,
-            "removals": [],
-            "w": deskewed.width,
-            "h": deskewed.height,
-        }
-        f["pages"].append(page)
-        new_pages.append(page)
-    doc.close()
+    new_pages = _analyse_pages(job_id, f["fid"], f["path"], start)
+    f["pages"].extend(new_pages)
     f["npages"] = len(f["pages"])
 
     return jsonify({"fid": f["fid"], "start": start, "npages": f["npages"],
