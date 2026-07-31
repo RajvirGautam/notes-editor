@@ -137,6 +137,24 @@
   .guide.h .grip{left:50%;top:-5px;transform:translateX(-50%);width:34px;height:10px}
   .guide.v .grip{top:50%;left:-5px;transform:translateY(-50%);width:10px;height:34px}
   .guide,.guide *{pointer-events:auto}
+  /* four-corner perspective editor — orange so it never reads as a crop guide */
+  #perspLayer{position:absolute;inset:0;z-index:7;pointer-events:none;display:none}
+  #perspLayer.on{display:block}
+  #perspLayer svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+  #perspLayer polygon{fill:rgba(240,160,32,.07);stroke:#f0a020;stroke-width:1.5;
+    stroke-dasharray:6 4;vector-effect:non-scaling-stroke}
+  .phandle{position:absolute;width:18px;height:18px;margin:-9px 0 0 -9px;
+    box-sizing:border-box;border-radius:50%;background:#f0a020;border:2px solid #fff;
+    box-shadow:0 2px 8px rgba(0,0,0,.6);cursor:grab;pointer-events:auto;
+    touch-action:none}
+  .phandle::after{content:attr(data-lbl);position:absolute;left:50%;top:-21px;
+    transform:translateX(-50%);font-size:10px;font-weight:600;color:#ffc257;
+    background:rgba(23,25,34,.9);padding:2px 6px;border-radius:4px;
+    white-space:nowrap;opacity:0;transition:opacity .12s;pointer-events:none}
+  .phandle:hover::after,.phandle.drag::after{opacity:1}
+  .phandle:hover,.phandle.drag{background:#ffc257}
+  .phandle.drag{cursor:grabbing}
+  #frame.before #perspLayer,#frame.deleted #perspLayer{display:none}
   /* right controls */
   #panel{width:280px;flex:0 0 280px;border-left:1px solid var(--line);
     background:var(--panel);overflow-y:auto;padding:16px}
@@ -165,6 +183,7 @@
   .sec[data-sec=shapes] h3::before{content:'🔷'}
   .sec[data-sec=rotate] h3::before{content:'🔄'}
   .sec[data-sec=tilt] h3::before{content:'📐'}
+  .sec[data-sec=persp] h3::before{content:'🪟'}
   .sec[data-sec=crop] h3::before{content:'✂️'}
   .sec[data-sec=move] h3::before{content:'↕️'}
   .sec[data-sec=sample] h3::before{content:'🎨'}
@@ -448,6 +467,15 @@
         <div class="guide h" id="gBot"><div class="grip"></div></div>
         <div class="guide v" id="gLeft"><div class="grip"></div></div>
         <div class="guide v" id="gRight"><div class="grip"></div></div>
+        <div id="perspLayer">
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+            <polygon id="pQuad" points="0,0 100,0 100,100 0,100"></polygon>
+          </svg>
+          <div class="phandle" data-pc="0" data-lbl="Top-left"></div>
+          <div class="phandle" data-pc="1" data-lbl="Top-right"></div>
+          <div class="phandle" data-pc="2" data-lbl="Bottom-right"></div>
+          <div class="phandle" data-pc="3" data-lbl="Bottom-left"></div>
+        </div>
         <div id="removalOverlay" style="position:absolute;inset:0;pointer-events:none;z-index:3" id="removalOverlay"></div>
         <div id="dragBand" class="drag-band" style="display:none;z-index:4;pointer-events:none"></div>
       </div>
@@ -652,6 +680,32 @@
         <div class="btnrow" style="margin-top:8px">
           <button id="applyAngleAll" style="flex:1">Angle → all pages</button>
           <button id="applyAngleRemaining" style="flex:1">Angle → remaining</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sec" data-sec="persp">
+      <h3>Perspective <span id="perspBadge" class="badge" style="display:none">ON</span></h3>
+      <div class="secbody">
+        <div class="muted" style="margin-bottom:8px">Drag the four orange corner
+          handles on the page to pull it into shape, or lean the whole sheet with
+          the sliders. The page keeps its size — only the content moves, and the
+          space it leaves behind is filled with the page's own paper colour.</div>
+        <div class="btnrow" style="margin-bottom:10px">
+          <button id="perspToggle" class="toggle" style="flex:1">◳ Corner handles: Off</button>
+        </div>
+        <div class="crow"><span>Horizontal lean <span class="unit">(turn left/right)</span></span>
+          <span id="vPerspH" class="unit">0</span>
+          <input type="range" id="perspH" min="-100" max="100" step="1" value="0"/></div>
+        <div class="crow"><span>Vertical lean <span class="unit">(tip back/forward)</span></span>
+          <span id="vPerspV" class="unit">0</span>
+          <input type="range" id="perspV" min="-100" max="100" step="1" value="0"/></div>
+        <div class="btnrow" style="margin-bottom:8px">
+          <button id="perspReset" style="flex:1">Reset (flat page)</button>
+        </div>
+        <div class="btnrow">
+          <button id="applyPerspAll" style="flex:1">Perspective → all pages</button>
+          <button id="applyPerspRemaining" style="flex:1">Perspective → remaining</button>
         </div>
       </div>
     </div>
@@ -912,6 +966,7 @@ const state = {
   shapeDraft:[],                    // points of the polygon being drawn
   shapeDraftAt:null,                // {fi,pi} the draft's points were placed on
   shapeColor:'#ffffff',             // fill colour for the next polygon
+  perspEdit:false,                  // perspective: corner handles shown on the page
   pendingGaps:[],                   // dragged-but-not-yet-removed bands (visible space)
   palette:null,                     // learned colour palette (global to job)
   paletteVersion:0,                 // bumps on each new sample (cache-bust)
@@ -999,6 +1054,7 @@ function pageEdited(f,i){
   const p=f.pages[i], a=f.auto[i];
   if(Math.abs(p.angle-a.angle)>0.001) return true;
   if((p.rotate||0)!==0) return true;
+  if(!perspFlat(p.persp)) return true;
   for(const k of ['left','top','right','bottom'])
     if(Math.abs(p.crop[k]-a.crop[k])>0.0005) return true;
   if(p.removals && p.removals.length > 0) return true;
@@ -1025,7 +1081,8 @@ const history = { stack: [], idx: -1 };
 function snapshot(){
   return JSON.stringify({
     files: state.files.map(f=>({
-      pages: f.pages.map(p=>({src:p.src, angle:p.angle, rotate:p.rotate||0, crop:{...p.crop},
+      pages: f.pages.map(p=>({src:p.src, angle:p.angle, rotate:p.rotate||0,
+        persp:perspCopy(p.persp), crop:{...p.crop},
         removals:[...(p.removals||[])],
         overlays:(p.overlays||[]).map(copyOv),
         shapes:copyShapes(p.shapes),
@@ -1085,6 +1142,7 @@ function applySnapshot(str){
     sf.pages.forEach((sp,pi)=>{
       const p = f.pages[pi]; if(!p) return;
       p.angle = sp.angle; p.rotate = sp.rotate||0;
+      p.persp = perspCopy(sp.persp);
       p.crop = {...sp.crop}; p.color = {...sp.color};
       p.removals = sp.removals ? [...sp.removals] : [];
       p.overlays = (sp.overlays||[]).map(copyOv);
@@ -1159,7 +1217,8 @@ async function uploadFiles(fileList){
 // PDF page. auto = the original detected settings, so "Auto" can reset.
 function prepFile(f){
   f.auto=f.pages.map(p=>({angle:p.angle, crop:{...p.crop}}));
-  f.pages=f.pages.map((p,i)=>({src:i, angle:p.angle, rotate:0, crop:{...p.crop},
+  f.pages=f.pages.map((p,i)=>({src:i, angle:p.angle, rotate:0, persp:perspNew(),
+    crop:{...p.crop},
     removals: p.removals ? [...p.removals] : [], overlays:[], shapes:[],
     color:{...DEF_COLOR}, bfit:{...DEF_BFIT}, deleted:false, wmo:null, w:p.w, h:p.h}));
   return f;
@@ -1173,7 +1232,8 @@ function appendPages(data){
   if(!f){ toast('Could not find the PDF to append to'); return; }
   (data.pages||[]).forEach((p,j)=>{
     f.auto.push({angle:p.angle, crop:{...p.crop}});
-    f.pages.push({src:data.start+j, angle:p.angle, rotate:0, crop:{...p.crop},
+    f.pages.push({src:data.start+j, angle:p.angle, rotate:0, persp:perspNew(),
+      crop:{...p.crop},
       removals: p.removals ? [...p.removals] : [], overlays:[], shapes:[],
       color:{...DEF_COLOR}, bfit:{...DEF_BFIT}, deleted:false, wmo:null, w:p.w, h:p.h});
   });
@@ -1304,7 +1364,7 @@ function removalsQuery(removals){
 function thumbUrl(fi,pi){
   const f=state.files[fi], p=f.pages[pi], c=p.crop;
   return `/api/preview?job=${state.job}&fid=${f.fid}&page=${p.src??pi}&angle=${p.angle}`
-    +`&rot=${p.rotate||0}`
+    +`&rot=${p.rotate||0}`+perspQuery(p)
     +colorQuery(p.color)+wmQuery(p)+removalsQuery(p.removals)+ovQuery(p)+shapesQuery(p)
     +`&crl=${c.left}&crt=${c.top}&crr=${c.right}&crb=${c.bottom}`
     +`&maxdim=${thumbDim()}&pv=${state.paletteVersion}`;
@@ -1489,7 +1549,7 @@ function refreshPreview(){
   const base=`/api/preview?job=${state.job}&fid=${f.fid}&page=${p.src??state.pi}`;
   const url = state.before
     ? `${base}&angle=0`                          // raw original, no colour
-    : `${base}&angle=${p.angle}&rot=${p.rotate||0}${colorQuery(p.color)}${wmQuery(p)}${removalsQuery(p.removals)}&pv=${state.paletteVersion}`;
+    : `${base}&angle=${p.angle}&rot=${p.rotate||0}${perspQuery(p)}${colorQuery(p.color)}${wmQuery(p)}${removalsQuery(p.removals)}&pv=${state.paletteVersion}`;
   const img=$('#pageImg');
   img.onload=()=>drawCrop();
   img.src=url;
@@ -1745,6 +1805,7 @@ $('#autoGapsBtn').onclick = async () => {
         page: p.src??state.pi,
         angle: parseFloat(p.angle) || 0,
         rotate: p.rotate || 0,
+        persp: perspPack(p.persp),
         crop: cropForDetect
       })
     });
@@ -1823,6 +1884,10 @@ function ovResolve(o, dest){
   const r={fid:sf.fid, page:sp.src??o.sp, angle:e.angle, rotate:e.rotate,
     crop:e.crop, removals:[...(sp.removals||[])], color:e.color,
     shapes:packShapes(sp.shapes), x:o.x, y:o.y, w:o.w};
+  // Perspective follows the source page (there's no per-overlay override), so
+  // straightening a page straightens everything pulled from it too.
+  const psq=perspPack(sp.persp);
+  if(psq) r.persp=psq;
   const h=o.h||(dest?ovHeightFrac(o,dest):0);
   if(h) r.h=+h.toFixed(4);
   return r;
@@ -1837,6 +1902,7 @@ function ovImgUrl(o){
   const c=r.crop;
   return `/api/preview?job=${state.job}&fid=${r.fid}&page=${r.page}`
     +`&angle=${r.angle}&rot=${r.rotate}`
+    +(r.persp?'&psp='+r.persp.map(pt=>pt[0].toFixed(4)+','+pt[1].toFixed(4)).join(','):'')
     +colorQuery(r.color)+removalsQuery(r.removals)
     +(r.shapes&&r.shapes.length?'&shp='+encodeURIComponent(JSON.stringify(r.shapes)):'')
     +`&crl=${c.left}&crt=${c.top}&crr=${c.right}&crb=${c.bottom}`
@@ -2659,6 +2725,7 @@ function drawCrop(){
   drawRemovals();
   drawBorder();
   drawShapes();     // after drawBorder — it may resize the page image
+  drawPersp();      // corner handles are %-positioned, so any layout goes
   if(state.before){ $('#editState').textContent='showing original'; return; }
   const img=$('#pageImg');
   const W=img.clientWidth, H=img.clientHeight;
@@ -2715,7 +2782,7 @@ $('#gLeft').addEventListener('pointerdown',startDrag('left'));
 $('#gRight').addEventListener('pointerdown',startDrag('right'));
 
 // ---- controls sync ------------------------------------------------------
-function syncControls(){ syncAngle(); syncRotate(); syncCropInputs(); syncColor(); }
+function syncControls(){ syncAngle(); syncRotate(); syncPersp(); syncCropInputs(); syncColor(); }
 function syncColor(){
   const c=curPage().color;
   if(['none','grayscale','bw'].includes(c.mode)) $('#cMode').value=c.mode;
@@ -2774,6 +2841,7 @@ function remapQuarter(p, oldR, newR){
   if(Math.abs(oldR-oq*90)>0.01||Math.abs(newR-nq*90)>0.01) return;
   const d=((nq-oq)%4+4)%4;
   if(!d) return;
+  remapPerspQuarter(p, d);
   let c={...p.crop};
   for(let i=0;i<d;i++) c={left:c.bottom, top:c.left, right:c.top, bottom:c.right};
   p.crop=c;
@@ -2840,6 +2908,176 @@ function applyRot(remaining){
 }
 $('#applyRotAll').onclick=()=>applyRot(false);
 $('#applyRotRemaining').onclick=()=>applyRot(true);
+
+// ---- perspective (four draggable corners + lean sliders) ------------------
+// p.persp = {c:[[x,y] ×4], h, v} — the quad the page's own four corners are
+// warped onto, in tl/tr/br/bl order, as fractions of the sheet. `c` is what the
+// handles set; h and v are the lean sliders, which add a symmetric keystone
+// offset on top of it. The handles show the *effective* quad (c + that offset),
+// so a drag writes back the remainder and the two never fight over the same
+// number. The sheet keeps its size through the warp, so the crop guides, gap
+// bands and pulled content all still measure against the same rectangle.
+const PERSP_IDENT=[[0,0],[1,0],[1,1],[0,1]];
+const PERSP_LEAN=0.25;              // a slider at ±100 = a quarter-page keystone
+function perspNew(){ return {c:PERSP_IDENT.map(pt=>[...pt]), h:0, v:0}; }
+function perspCopy(ps){
+  if(!ps||!Array.isArray(ps.c)||ps.c.length!==4) return perspNew();
+  return {c:ps.c.map(pt=>[+pt[0]||0, +pt[1]||0]), h:+ps.h||0, v:+ps.v||0};
+}
+// What the lean sliders add to each corner. Horizontal turns the sheet about
+// its vertical axis — one side grows as the other shrinks; vertical tips it
+// about the horizontal one. Between them they cover the two keystones a page
+// picks up when it wasn't flat to the camera.
+function perspLean(ps){
+  const th=(+(ps&&ps.h)||0)/100*PERSP_LEAN/2;
+  const tv=(+(ps&&ps.v)||0)/100*PERSP_LEAN/2;
+  return [[ tv,  th],    // tl — the near edges grow, the far ones shrink
+          [-tv, -th],    // tr
+          [ tv,  th],    // br
+          [-tv, -th]];   // bl
+}
+function perspQuad(ps){
+  const base=(ps&&Array.isArray(ps.c)&&ps.c.length===4)?ps.c:PERSP_IDENT;
+  const off=perspLean(ps);
+  return base.map((pt,i)=>[(+pt[0]||0)+off[i][0], (+pt[1]||0)+off[i][1]]);
+}
+function perspFlat(ps){
+  if(!ps) return true;
+  return perspQuad(ps).every((pt,i)=>Math.abs(pt[0]-PERSP_IDENT[i][0])<1e-4
+                                   && Math.abs(pt[1]-PERSP_IDENT[i][1])<1e-4);
+}
+// A folded or collapsed quad has no sane warp behind it, so every corner has to
+// keep turning the same way and the quad has to keep some area. Drags and
+// slider moves that would break either are simply refused.
+function perspSane(q){
+  let a=0;
+  for(let i=0;i<4;i++){ const p=q[i], n=q[(i+1)%4]; a+=p[0]*n[1]-n[0]*p[1]; }
+  if(a/2 < 0.08) return false;
+  for(let i=0;i<4;i++){
+    const p=q[i], b=q[(i+1)%4], c=q[(i+2)%4];
+    if((b[0]-p[0])*(c[1]-b[1])-(b[1]-p[1])*(c[0]-b[0]) <= 0.01) return false;
+  }
+  return true;
+}
+// Eight fractions on every preview/thumbnail URL — a flat page sends nothing.
+function perspPack(ps){ return perspFlat(ps) ? null : perspQuad(ps); }
+function perspQuery(p){
+  const q=p&&perspPack(p.persp);
+  return q ? '&psp='+q.map(pt=>pt[0].toFixed(4)+','+pt[1].toFixed(4)).join(',') : '';
+}
+// A quarter turn moves the page under the quad, so the quad turns with it: each
+// corner's fraction rotates and takes its new place in the tl/tr/br/bl order.
+// The lean bakes into the quad first — after the turn a "horizontal" lean is a
+// vertical one, and the slider numbers no longer mean what they did.
+function remapPerspQuarter(p, d){
+  if(perspFlat(p.persp)){ p.persp=perspNew(); return; }
+  let c=perspQuad(p.persp);
+  for(let t=0;t<d;t++){
+    const r=c.map(pt=>[1-pt[1], pt[0]]);      // 90° clockwise
+    c=[r[3],r[0],r[1],r[2]];                  // tl←bl, tr←tl, br←tr, bl←br
+  }
+  p.persp={c, h:0, v:0};
+}
+function drawPersp(){
+  const layer=$('#perspLayer'); if(!layer) return;
+  const p=curPage();
+  const badge=$('#perspBadge');
+  if(badge) badge.style.display=(p&&!perspFlat(p.persp))?'':'none';
+  const on=!!p && !p.deleted && !state.before && state.perspEdit;
+  layer.classList.toggle('on', on);
+  if(!on) return;
+  const q=perspQuad(p.persp||perspNew());
+  $('#pQuad').setAttribute('points',
+    q.map(pt=>(pt[0]*100).toFixed(3)+','+(pt[1]*100).toFixed(3)).join(' '));
+  layer.querySelectorAll('.phandle').forEach(h=>{
+    const i=+h.dataset.pc;
+    h.style.left=(q[i][0]*100).toFixed(3)+'%';
+    h.style.top=(q[i][1]*100).toFixed(3)+'%';
+  });
+}
+function syncPersp(){
+  const p=curPage(), ps=(p&&p.persp)||perspNew();
+  const h=Math.round(ps.h||0), v=Math.round(ps.v||0);
+  $('#perspH').value=h; $('#vPerspH').textContent=h;
+  $('#perspV').value=v; $('#vPerspV').textContent=v;
+  const btn=$('#perspToggle');
+  btn.classList.toggle('active', state.perspEdit);
+  btn.textContent='◳ Corner handles: '+(state.perspEdit?'On':'Off');
+  drawPersp();
+}
+function perspChanged(soon=true){
+  syncEditState();
+  refreshPreviewDebounced();
+  if(soon){ refreshThumbSoon(state.fi,state.pi); commitSoon(); }
+  else{ refreshThumb(state.fi,state.pi); commit(); }
+}
+function perspDragStart(ev){
+  const p=curPage(); if(!p||p.deleted||state.before) return;
+  ev.preventDefault(); ev.stopPropagation();
+  const h=ev.currentTarget, i=+h.dataset.pc;
+  if(!p.persp) p.persp=perspNew();
+  const ps=p.persp, off=perspLean(ps);
+  const rect=$('#frame').getBoundingClientRect();
+  h.classList.add('drag');
+  borderGuideDrag=true;            // freeze the border layout, like a guide drag
+  const move=e=>{
+    const x=(e.clientX-rect.left)/Math.max(1,rect.width);
+    const y=(e.clientY-rect.top)/Math.max(1,rect.height);
+    // The handle sits on the effective corner, so the manual quad keeps
+    // whatever is left once the lean sliders have had their say.
+    const prev=ps.c[i];
+    ps.c[i]=[Math.max(-0.5,Math.min(1.5,x-off[i][0])),
+             Math.max(-0.5,Math.min(1.5,y-off[i][1]))];
+    if(!perspSane(perspQuad(ps))){ ps.c[i]=prev; return; }
+    drawPersp(); perspChanged();
+  };
+  const up=()=>{
+    document.removeEventListener('pointermove',move);
+    document.removeEventListener('pointerup',up);
+    h.classList.remove('drag');
+    borderGuideDrag=false; drawBorder();
+    refreshThumb(state.fi,state.pi); commit();
+  };
+  document.addEventListener('pointermove',move);
+  document.addEventListener('pointerup',up);
+}
+document.querySelectorAll('#perspLayer .phandle')
+  .forEach(h=>h.addEventListener('pointerdown',perspDragStart));
+
+function setPerspLean(key, v){
+  const p=curPage(); if(!p){ toast('Load a PDF first'); return; }
+  if(!p.persp) p.persp=perspNew();
+  const ps=p.persp, old=ps[key];
+  ps[key]=Math.max(-100,Math.min(100,Math.round(v)||0));
+  if(!perspSane(perspQuad(ps))) ps[key]=old;   // syncPersp puts the slider back
+  syncPersp(); perspChanged();
+}
+$('#perspH').addEventListener('input',e=>setPerspLean('h',parseFloat(e.target.value)));
+$('#perspV').addEventListener('input',e=>setPerspLean('v',parseFloat(e.target.value)));
+$('#perspToggle').onclick=()=>{
+  state.perspEdit=!state.perspEdit;
+  if(state.perspEdit){
+    const sec=document.querySelector('#panel .sec[data-sec=persp]');
+    if(sec) sec.classList.remove('collapsed');
+  }
+  syncPersp();
+};
+$('#perspReset').onclick=()=>{
+  const p=curPage(); if(!p){ toast('Load a PDF first'); return; }
+  if(perspFlat(p.persp)){ p.persp=perspNew(); syncPersp(); return; }
+  p.persp=perspNew();
+  syncPersp(); perspChanged(false);
+};
+function applyPersp(remaining){
+  const pg=curPage(); if(!pg){ toast('Load a PDF first'); return; }
+  const ps=perspCopy(pg.persp), pages=applyTargets(remaining);
+  pages.forEach(p=>{ p.persp=perspCopy(ps); });
+  toast(`Perspective applied to ${pages.length} page${pages.length===1?'':'s'}`
+    +(remaining?' (this page → end)':''));
+  refreshAllThumbs(); refreshPreview(); syncEditState(); commit();
+}
+$('#applyPerspAll').onclick=()=>applyPersp(false);
+$('#applyPerspRemaining').onclick=()=>applyPersp(true);
 
 // The main preview shows the page uncropped, so margin tweaks normally don't
 // touch it — unless the watermark is anchored to the margins, in which case it
@@ -3896,7 +4134,8 @@ document.addEventListener('keydown',e=>{
 function draftState(){
   return {
     files: state.files.map(f=>({name:f.name,
-      pages: f.pages.map(p=>({src:p.src, angle:p.angle, rotate:p.rotate||0, crop:{...p.crop},
+      pages: f.pages.map(p=>({src:p.src, angle:p.angle, rotate:p.rotate||0,
+        persp:perspCopy(p.persp), crop:{...p.crop},
         removals:[...(p.removals||[])],
         overlays:(p.overlays||[]).map(copyOv),
         shapes:copyShapes(p.shapes), color:{...p.color},
@@ -4034,6 +4273,7 @@ function applyDraftState(s){
     (sf.pages||[]).forEach((sp,pi)=>{
       const p=f.pages[pi]; if(!p) return;
       p.angle=sp.angle; p.rotate=sp.rotate||0;
+      p.persp=perspCopy(sp.persp);          // drafts saved before this: flat
       p.crop={...sp.crop}; p.color={...DEF_COLOR, ...sp.color};
       p.removals=sp.removals?[...sp.removals]:[];
       p.overlays=(sp.overlays||[]).map(copyOv);
@@ -4092,6 +4332,7 @@ $('#exportBtn').onclick=async()=>{
   const settings={};
   state.files.forEach(f=>{
     settings[f.fid]={pages:f.pages.map((p,pi)=>({src:p.src??pi,angle:p.angle,rotate:p.rotate||0,
+      persp:perspPack(p.persp),
       crop:p.crop,removals:p.removals,
       overlays:(p.overlays||[]).map(o=>ovResolve(o,p)).filter(Boolean),
       shapes:packShapes(p.shapes),

@@ -14,6 +14,7 @@ Pipeline per page:
 from __future__ import annotations
 
 import io
+import math
 import os
 import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
@@ -154,6 +155,101 @@ def rotate_page(img: Image.Image, rot: float) -> Image.Image:
         return img.transpose(_QUARTER_TURNS[snapped])
     return img.rotate(-r, resample=Image.BICUBIC, expand=True,
                       fillcolor=(255, 255, 255))
+
+
+# ---------------------------------------------------------------------------
+# Perspective (four-corner warp)
+# ---------------------------------------------------------------------------
+
+# Corner order everywhere: top-left, top-right, bottom-right, bottom-left.
+PERSP_IDENTITY = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+
+
+def persp_corners(persp) -> list[list[float]] | None:
+    """
+    Normalise a perspective spec to four [x, y] fractions (tl, tr, br, bl).
+
+    Accepts a flat list of 8 numbers, a list of 4 pairs, or a dict with those
+    under "c" (the editor's shape). Anything missing or malformed comes back
+    as None, which every caller reads as "no perspective on this page".
+    """
+    if persp is None:
+        return None
+    if isinstance(persp, dict):
+        persp = persp.get("c")
+    if persp is None:
+        return None
+    try:
+        flat: list[float] = []
+        for item in persp:
+            if isinstance(item, (list, tuple)):
+                flat.extend(float(v) for v in item)
+            else:
+                flat.append(float(item))
+    except (TypeError, ValueError):
+        return None
+    if len(flat) != 8 or not all(math.isfinite(v) for v in flat):
+        return None
+    # The editor clamps its handles, but a hand-written request must not be
+    # able to blow the page up to a sliver.
+    flat = [max(-1.0, min(2.0, v)) for v in flat]
+    return [[flat[0], flat[1]], [flat[2], flat[3]],
+            [flat[4], flat[5]], [flat[6], flat[7]]]
+
+
+def is_identity_persp(persp) -> bool:
+    """True when the quad is (near enough) the untouched page rectangle."""
+    c = persp_corners(persp)
+    if c is None:
+        return True
+    return all(abs(c[i][j] - PERSP_IDENTITY[i][j]) < 1e-4
+               for i in range(4) for j in range(2))
+
+
+def _persp_coeffs(dst: list, src: list) -> list:
+    """
+    PIL PERSPECTIVE coefficients for the mapping dst -> src.
+
+    Image.transform samples *backwards*: for every output pixel it asks where
+    that pixel came from in the input. So the eight coefficients solve the
+    homography that sends each destination corner to its source corner.
+    """
+    a, b = [], []
+    for (X, Y), (x, y) in zip(dst, src):
+        a.append([X, Y, 1, 0, 0, 0, -x * X, -x * Y])
+        b.append(x)
+        a.append([0, 0, 0, X, Y, 1, -y * X, -y * Y])
+        b.append(y)
+    return np.linalg.solve(np.array(a, dtype=np.float64),
+                           np.array(b, dtype=np.float64)).tolist()
+
+
+def apply_perspective(img: Image.Image, persp) -> Image.Image:
+    """
+    Warp the page so its four corners land on the given quad.
+
+    The quad is given as fractions of the page (tl, tr, br, bl) and the sheet
+    keeps its exact size, so everything measured downstream — crop guides, gap
+    removals, overlay placements — still lives in the same rectangle it did
+    before. Whatever the warp leaves empty is filled with the page's own paper
+    colour rather than white, so a corrected scan doesn't gain bright wedges
+    along its edges.
+    """
+    c = persp_corners(persp)
+    if c is None or is_identity_persp(c):
+        return img
+    W, H = img.size
+    quad = [(x * W, y * H) for x, y in c]
+    rect = [(0.0, 0.0), (float(W), 0.0), (float(W), float(H)), (0.0, float(H))]
+    try:
+        coeffs = _persp_coeffs(quad, rect)
+    except np.linalg.LinAlgError:
+        return img              # collapsed / folded quad — leave the page alone
+    if not all(math.isfinite(v) for v in coeffs):
+        return img
+    src = img if img.mode in ("RGB", "RGBA") else img.convert("RGB")
+    return src.transform((W, H), Image.PERSPECTIVE, coeffs,
+                         resample=Image.BICUBIC, fillcolor=paper_color(src))
 
 
 def content_bbox_fractions(img: Image.Image, pad_frac: float = 0.01) -> dict:
@@ -961,7 +1057,7 @@ def paste_overlays(img: Image.Image, overlays: list[dict], crop: dict | None,
     Composite content pulled from other pages ("merge pages") onto a page.
 
     Each overlay dict carries the source page's full transform (angle, rotate,
-    crop, removals, color) plus its placement on the destination: x, y are the
+    persp, crop, removals, color) plus its placement on the destination: x, y are the
     top-left corner and w the width, all fractions of the destination's
     *uncropped* deskewed page — the same space the editor's guides live in.
     `crop` is the destination crop already applied to `img` (None if it wasn't)
@@ -989,7 +1085,8 @@ def paste_overlays(img: Image.Image, overlays: list[dict], crop: dict | None,
             src = process_page(base, float(ov.get("angle", 0) or 0),
                                ov.get("crop") or {}, ov.get("color"),
                                palette, ov.get("removals"),
-                               float(ov.get("rotate", 0) or 0))
+                               float(ov.get("rotate", 0) or 0),
+                               ov.get("persp"))
             if ov.get("shapes"):
                 src = draw_shapes(src, ov["shapes"], ov.get("crop"))
             ow = max(1, int(round(float(ov.get("w", 0.5)) * full_w)))
@@ -1077,17 +1174,21 @@ def process_page(img: Image.Image, angle: float, crop: dict,
                  color: dict | None = None,
                  palette: dict | None = None,
                  removals: list[dict] | None = None,
-                 rotate: float = 0.0) -> Image.Image:
-    """Full transform for one page: rotate -> deskew -> removals -> crop ->
-    scan/colour/palette.
+                 rotate: float = 0.0,
+                 persp=None) -> Image.Image:
+    """Full transform for one page: rotate -> deskew -> perspective ->
+    removals -> crop -> scan/colour/palette.
 
     Rotation runs first: crop and removal fractions are recorded against the
-    rotated preview, so they must be applied in that same space. Removals run
-    before the crop because their fractions are recorded on the uncropped
-    deskewed preview — applying them after the crop would shift the removed
-    band by the top-crop inset.
+    rotated preview, so they must be applied in that same space. The four-corner
+    perspective warp joins the geometry fixes there, ahead of everything that
+    measures the page — it keeps the sheet's size, so those fractions still mean
+    what they did. Removals run before the crop because their fractions are
+    recorded on the uncropped deskewed preview — applying them after the crop
+    would shift the removed band by the top-crop inset.
     """
-    drem = apply_removals(deskew_image(rotate_page(img, rotate), angle), removals)
+    geo = apply_perspective(deskew_image(rotate_page(img, rotate), angle), persp)
+    drem = apply_removals(geo, removals)
     dcrop = apply_crop(drem, crop)
     return finish_color(dcrop, color, palette)
 

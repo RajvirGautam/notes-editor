@@ -294,6 +294,23 @@ def _crop_from_args(args):
     return None if all(v <= 0 for v in c.values()) else c
 
 
+def _persp_from_args(args):
+    """
+    Four-corner perspective quad from the compact query param (psp).
+
+    Sent as eight comma-separated fractions — tl, tr, br, bl — because it rides
+    on every preview and thumbnail URL. None means "leave the page flat".
+    """
+    raw = args.get("psp", "")
+    if not raw:
+        return None
+    try:
+        nums = [float(v) for v in raw.split(",")]
+    except ValueError:
+        return None
+    return nums if len(nums) == 8 else None
+
+
 def _overlays_from_args(args) -> list[dict]:
     """Parse merged-page overlays from query param (ov, JSON list)."""
     raw = args.get("ov", "")
@@ -383,6 +400,10 @@ def preview():
 
     palette = _job(job_id).get("palette")
     out = imaging.deskew_image(imaging.rotate_page(src, rot), angle)
+    # The perspective warp joins rotate/deskew as a geometry fix, before
+    # anything measures the page. It keeps the sheet's size, so the crop guides
+    # and gap bands drawn over this preview still mean what they did.
+    out = imaging.apply_perspective(out, _persp_from_args(request.args))
     # Removals before crop: their fractions are in uncropped-deskewed space.
     if removals:
         out = imaging.apply_removals(out, removals)
@@ -427,13 +448,16 @@ def detect_gaps():
     _rot = request.args.get("rot")
     rot = float(_rot) if _rot is not None else float(req_json.get("rotate", 0) or 0)
     crop = _crop_from_args(request.args) if request.args.get("crl") else req_json.get("crop")
+    persp = _persp_from_args(request.args) if request.args.get("psp") \
+        else req_json.get("persp")
 
     _job(job_id)
     base = BASE_CACHE.get((job_id, fid, page))
     if base is None:
         abort(404, "no cached page")
 
-    deskewed = imaging.deskew_image(imaging.rotate_page(base, rot), angle)
+    deskewed = imaging.apply_perspective(
+        imaging.deskew_image(imaging.rotate_page(base, rot), angle), persp)
     if crop:
         deskewed = imaging.apply_crop(deskewed, crop)
 
@@ -594,7 +618,7 @@ def _send_board_zip(pages: list, covers: list, bcfg: dict, dpi: int,
 def export():
     """
     Body: {
-      job, dpi?, settings: { fid: { pages: [ {angle, rotate, crop, removals} ] } },
+      job, dpi?, settings: { fid: { pages: [ {angle, rotate, persp, crop, removals} ] } },
       borders?: { on, class, board, stream, number, name, medium, subject }
     }
     Every loaded file's pages go into the SAME document, in rail order, so an
@@ -715,6 +739,7 @@ def export():
                     continue          # page was deleted in the editor — skip it
                 angle = float(ps.get("angle", f["pages"][i]["angle"]))
                 rot = float(ps.get("rotate", 0) or 0)
+                persp = ps.get("persp")
                 crop = ps.get("crop", f["pages"][i]["crop"])
                 removals = ps.get("removals") if "removals" in ps else f["pages"][i].get("removals")
                 color = ps.get("color") or imaging.DEFAULT_COLOR
@@ -725,7 +750,7 @@ def export():
                 ecrop = imaging.expanded_crop(crop, ps.get("overlays"))
                 hi = imaging.render_page(doc, i, dpi)
                 processed = imaging.process_page(hi, angle, ecrop, color, palette,
-                                                 removals, rot)
+                                                 removals, rot, persp)
                 if ps.get("overlays"):
                     processed = imaging.paste_overlays(
                         processed, ps["overlays"], ecrop, palette,
