@@ -47,9 +47,13 @@ import imaging
 HERE = Path(__file__).parent
 BORDERS_DIR = HERE / "borders"
 FONT_PATH = HERE / "fonts" / "Urbanist-var.ttf"
+DEV_FONT_PATH = HERE / "fonts" / "NotoSansDevanagari-var.ttf"
 IMG_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
 SEP = "__"                      # "<Board>__<Stream>.<ext>" cover filenames
                                 # ("<Board>.<ext>" for streamless classes)
+HINDI_MEDIUMS = {"HN", "HINDI"}         # borders-tab medium values meaning Hindi
+HINDI_LABEL_PREFIX = "अध्याय - "        # replaces label_prefix for Hindi medium
+_DEVANAGARI = re.compile(r"[ऀ-ॿ]")
 _SAFE_CLS = re.compile(r"^[A-Za-z0-9 _-]+$")
 
 try:
@@ -409,26 +413,33 @@ def scaled_header(h: dict, sx: float, sy: float) -> dict:
 _font_uri_cache: dict = {}
 
 
-def _font_data_uri() -> str:
-    key = str(FONT_PATH)
+def _font_data_uri(path: Path = FONT_PATH) -> str:
+    key = str(path)
     if key not in _font_uri_cache:
-        b64 = base64.b64encode(FONT_PATH.read_bytes()).decode("ascii")
+        b64 = base64.b64encode(path.read_bytes()).decode("ascii")
         _font_uri_cache[key] = f"data:font/ttf;base64,{b64}"
     return _font_uri_cache[key]
 
 
-def _common_css(h: dict, tw: int, ch: int, font_uri: str) -> str:
+def _common_css(h: dict, tw: int, ch: int, font_uri: str,
+                dev_uri: str = "") -> str:
+    dev_face = f"""
+  @font-face {{
+    font-family:'Noto Sans Devanagari';
+    src:url('{dev_uri}') format('truetype');
+    font-weight:100 900;
+  }}""" if dev_uri else ""
     return f"""
   @font-face {{
     font-family:'Urbanist';
     src:url('{font_uri}') format('truetype');
     font-weight:100 900;
-  }}
+  }}{dev_face}
   *{{margin:0;padding:0;box-sizing:border-box}}
   html,body{{width:{tw}px;height:{ch}px;background:transparent}}
   .txt{{
     position:absolute;
-    font-family:'Urbanist',sans-serif;
+    font-family:'Urbanist','Noto Sans Devanagari',sans-serif;
     font-weight:{h['font_weight']};
     font-size:{h['font_size']}px;
     letter-spacing:{h['letter_spacing']}px;
@@ -440,7 +451,7 @@ def _common_css(h: dict, tw: int, ch: int, font_uri: str) -> str:
 
 
 def _html_anchored(number: str, name: str, h: dict, tw: int, ch: int,
-                   font_uri: str) -> str:
+                   font_uri: str, dev_uri: str = "") -> str:
     """Template already contains the "|" divider: label left-anchored at a
     fixed x, name left-anchored right of the divider."""
     number = _html.escape(number.strip())
@@ -451,7 +462,7 @@ def _html_anchored(number: str, name: str, h: dict, tw: int, ch: int,
     lh = h.get("name_line_height", 1.06)
     label = f"{h['label_prefix']}{number}" if number else ""
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>
-{_common_css(h, tw, ch, font_uri)}
+{_common_css(h, tw, ch, font_uri, dev_uri)}
   #label{{left:{label_left}px;top:{h['center_y']}px;transform:translateY(-50%);
          text-align:left;white-space:nowrap}}
   #name{{left:{name_left}px;top:{h['center_y']}px;transform:translateY(-50%);
@@ -464,7 +475,7 @@ def _html_anchored(number: str, name: str, h: dict, tw: int, ch: int,
 
 
 def _html_flex(number: str, name: str, h: dict, tw: int, ch: int,
-               font_uri: str) -> str:
+               font_uri: str, dev_uri: str = "") -> str:
     """Whole unit incl. a drawn divider as one flex row (no divider in art)."""
     number = _html.escape(number.strip())
     name = _html.escape(name.strip())
@@ -474,7 +485,7 @@ def _html_flex(number: str, name: str, h: dict, tw: int, ch: int,
                if number and name and dv.get("width", 0) > 0 else "")
     name_span = f'<span class="name">{name}</span>' if name else ""
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>
-{_common_css(h, tw, ch, font_uri)}
+{_common_css(h, tw, ch, font_uri, dev_uri)}
   #bar{{left:{h['text_left']}px;top:{h['center_y']}px;transform:translateY(-50%);
        display:flex;align-items:center;
        max-width:{h['name_max_right'] - h['text_left']}px;}}
@@ -541,10 +552,12 @@ class HeaderRenderer:
     same overlay. Falls back to Pillow drawing when Chromium is unavailable.
     """
 
-    def __init__(self, cfg: dict, number: str, name: str):
+    def __init__(self, cfg: dict, number: str, name: str, medium: str = ""):
         self.cfg = cfg
         self.number = (number or "").strip()
         self.name = (name or "").strip()
+        # Hindi medium swaps the label prefix ("CHAPTER - " -> "अध्याय - ")
+        self.hindi = str(medium or "").strip().upper() in HINDI_MEDIUMS
         self._cache: dict = {}
         self._pw = None
         self._browser = None
@@ -575,6 +588,8 @@ class HeaderRenderer:
         if key in self._cache:
             return self._cache[key]
         h = scaled_header(self.cfg["header"], sx, sy)
+        if self.hindi:
+            h["label_prefix"] = HINDI_LABEL_PREFIX
         ch = max(1, int(round(h.get("canvas_height", 360))))
         tw = max(1, int(round(out_w)))
         img = None
@@ -603,10 +618,14 @@ class HeaderRenderer:
     def _render_playwright(self, h: dict, tw: int, ch: int) -> Image.Image:
         anchored = h.get("use_template_divider", False)
         font_uri = _font_data_uri()
+        dev_uri = (_font_data_uri(DEV_FONT_PATH)
+                   if self.hindi and DEV_FONT_PATH.is_file() else "")
         if anchored:
-            html = _html_anchored(self.number, self.name, h, tw, ch, font_uri)
+            html = _html_anchored(self.number, self.name, h, tw, ch,
+                                  font_uri, dev_uri)
         else:
-            html = _html_flex(self.number, self.name, h, tw, ch, font_uri)
+            html = _html_flex(self.number, self.name, h, tw, ch,
+                              font_uri, dev_uri)
 
         page = self._ensure_page(tw, ch)
         page.set_content(html, wait_until="networkidle")
@@ -650,7 +669,8 @@ class HeaderRenderer:
                 fs = self._fit_line(label, h["font_size"], ls, weight, avail,
                                     h.get("label_min_font_size", 24))
                 self._draw_ls(draw, (label_left, cy), label,
-                              self._font(fs, weight), h["label_color"], ls)
+                              self._font(fs, weight, label),
+                              h["label_color"], ls)
             if name:
                 name_left = h["divider_x"] + h["name_gap"]
                 zone_w = h["name_max_right"] - name_left
@@ -678,7 +698,8 @@ class HeaderRenderer:
                 fs -= 1
             x = h["text_left"]
             if label:
-                self._draw_ls(draw, (x, cy), label, self._font(fs, weight),
+                self._draw_ls(draw, (x, cy), label,
+                              self._font(fs, weight, label),
                               h["label_color"], ls)
                 x += self._text_w(label, fs, ls, weight)
             if label and name and dv.get("width", 0) > 0:
@@ -690,7 +711,8 @@ class HeaderRenderer:
                                        fill=dv.get("color", "#12303a"))
                 x = x1 + gap
             if name:
-                self._draw_ls(draw, (x, cy), name, self._font(fs, weight),
+                self._draw_ls(draw, (x, cy), name,
+                              self._font(fs, weight, name),
                               h["name_color"], ls)
         return img
 
@@ -699,8 +721,8 @@ class HeaderRenderer:
         fs = self._fit_line(name, h["font_size"], ls, weight, zone_w,
                             h.get("name_one_line_min", 26))
         if self._text_w(name, fs, ls, weight) <= zone_w:
-            self._draw_ls(draw, (left, cy), name, self._font(fs, weight),
-                          h["name_color"], ls)
+            self._draw_ls(draw, (left, cy), name,
+                          self._font(fs, weight, name), h["name_color"], ls)
             return
         max_lines = int(h.get("name_max_lines", 2))
         min_fs = int(round(h.get("name_min_font_size", 16)))
@@ -718,7 +740,7 @@ class HeaderRenderer:
         top = cy - (len(lines) - 1) * fs * line_h / 2
         for i, line in enumerate(lines):
             self._draw_ls(draw, (left, top + i * fs * line_h), line,
-                          self._font(fs, weight), h["name_color"], ls)
+                          self._font(fs, weight, line), h["name_color"], ls)
 
     def _wrap(self, text, fs, ls, weight, zone_w):
         words, lines, cur = text.split(), [], ""
@@ -741,22 +763,36 @@ class HeaderRenderer:
         return fs
 
     @staticmethod
-    def _font(size, weight) -> ImageFont.FreeTypeFont:
-        font = ImageFont.truetype(str(FONT_PATH), max(8, int(round(size))))
+    def _font(size, weight, text="") -> ImageFont.FreeTypeFont:
+        path = (DEV_FONT_PATH if _DEVANAGARI.search(text)
+                and DEV_FONT_PATH.is_file() else FONT_PATH)
+        font = ImageFont.truetype(str(path), max(8, int(round(size))))
         try:
-            font.set_variation_by_axes([weight])
+            axes = font.get_variation_axes()
+            vals = []
+            for ax in axes:
+                name = ax.get("name", b"")
+                if isinstance(name, bytes):
+                    name = name.decode("latin-1", "ignore")
+                vals.append(weight if name.strip("\x00 ").lower()
+                            in ("weight", "wght") else ax["default"])
+            font.set_variation_by_axes(vals)
         except Exception:
             pass
         return font
 
     def _text_w(self, text, fs, ls, weight) -> float:
-        font = self._font(fs, weight)
+        font = self._font(fs, weight, text)
+        if _DEVANAGARI.search(text):
+            return font.getlength(text)
         return font.getlength(text) + ls * max(0, len(text) - 1)
 
     def _draw_ls(self, draw, xy, text, font, fill, ls):
         """draw.text with CSS-style letter-spacing, anchored left-middle."""
         x, y = xy
-        if ls <= 0.01:
+        # Per-glyph spacing would split Devanagari conjuncts/matras — draw
+        # those whole and let the shaper do its work.
+        if ls <= 0.01 or _DEVANAGARI.search(text):
             draw.text((x, y), text, font=font, fill=fill, anchor="lm")
             return
         for chch in text:
