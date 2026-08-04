@@ -15,15 +15,18 @@ import json
 import os
 import re
 import time
+import traceback
 import uuid
 import tempfile
 import atexit
 import shutil
 import zipfile
+from datetime import datetime
 
 import fitz  # PyMuPDF
 from PIL import Image
 from flask import Flask, request, jsonify, send_file, Response, abort
+from werkzeug.exceptions import HTTPException
 
 import imaging
 import borders
@@ -100,6 +103,39 @@ _PROCESS_START = time.time()
 WORK_DIR = tempfile.mkdtemp(prefix="notes_deskew_")
 atexit.register(lambda: shutil.rmtree(WORK_DIR, ignore_errors=True))
 
+# Crashes must leave a trace the user can send us: the terminal window is
+# usually closed (or its scrollback gone) by the time anyone asks what went
+# wrong, so every unhandled error is appended here, next to server.py.
+LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "notes-editor.log")
+
+
+def _log_exception(context: str):
+    try:
+        with open(LOG_PATH, "a", encoding="utf-8") as fh:
+            fh.write(f"\n[{datetime.now():%Y-%m-%d %H:%M:%S}] {context}\n")
+            fh.write(traceback.format_exc())
+    except OSError:
+        pass
+
+
+@app.errorhandler(Exception)
+def _api_error(e):
+    """
+    Every error leaves this server as JSON {"error": ...}. The editor shows
+    that text in a toast; without this, an unhandled exception became a plain
+    HTML 500 page the client could only render as a blank "export failed".
+    """
+    if isinstance(e, HTTPException):        # abort(...) keeps its status/text
+        return jsonify({"error": e.description}), e.code
+    _log_exception(f"{request.method} {request.path}")
+    if isinstance(e, MemoryError):
+        return jsonify({"error": "the computer ran out of memory during this "
+                        "step — close other apps, or export at a lower DPI "
+                        "(150 or 200) and try again"}), 500
+    return jsonify({"error": f"{type(e).__name__}: {e} — full details were "
+                    "saved to notes-editor.log (next to server.py)"}), 500
+
 # job_id -> {"files": [ {fid, name, path, pages: [ {angle, crop, w, h} ] } ] }
 JOBS: dict = {}
 # (job_id, fid, page) -> deskew-DPI base raster (PIL RGB), before any rotation
@@ -157,7 +193,11 @@ def _page_count(path: str) -> int:
 def _job(job_id: str) -> dict:
     job = JOBS.get(job_id)
     if not job:
-        abort(404, "unknown job")
+        # Restarting the app empties JOBS, but an already-open browser tab
+        # still shows the pages it loaded earlier — tell them what happened.
+        abort(410, "the app was restarted since these pages were loaded, so "
+                   "this session is gone — reload the browser tab and add "
+                   "the PDFs again")
     return job
 
 
@@ -814,7 +854,7 @@ def export():
     """
     data = request.get_json(force=True)
     job_id = data.get("job", "")
-    dpi = int(data.get("dpi", DEFAULT_EXPORT_DPI))
+    dpi = int(data.get("dpi") or DEFAULT_EXPORT_DPI)
     settings = data.get("settings", {})
     watermark = bool(data.get("watermark", False))
     # Global switch stamps every page; a page whose settings carry a "wmo"

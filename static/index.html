@@ -4838,20 +4838,27 @@ $('#exportBtn').onclick=async()=>{
     const r=await fetch('/api/export',{method:'POST',
       headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     if(!r.ok){
-      let msg='export failed';
+      let msg='export failed (server error '+r.status+')';
       try{ msg=(await r.json()).error||msg; }catch(_){}
       throw new Error(msg);
     }
     const blob=await r.blob();
     const cd=r.headers.get('Content-Disposition')||'';
-    const m=cd.match(/filename="?([^"]+)"?/);
+    const m=cd.match(/filename="?([^";]+)"?/);
     const name=m?m[1]:(nAll?'all_boards.zip':'notes_fixed.pdf');
     const url=URL.createObjectURL(blob);
     const a=document.createElement('a');a.href=url;a.download=name;a.click();
     URL.revokeObjectURL(url);
     toast('✅ Exported '+name+(nAll?` — ${nAll} board PDFs inside`:'')
       +(saved?' — saved to 🕘 History':''));
-  }catch(e){ toast('Error: '+e.message); }
+  }catch(e){
+    // fetch throws TypeError when the server itself is unreachable — the
+    // black window was closed, the machine slept, or the app was restarted
+    toast('Error: '+(e instanceof TypeError
+      ?'could not reach the app — is the black server window still open? '
+        +'Start it again and reload this tab.'
+      :e.message), 12000);
+  }
   finally{ t.remove(); }
 };
 

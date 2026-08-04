@@ -5,3 +5,8 @@ __pycache__/
 # Saved editing drafts (PDF snapshots + edit state) — kept on disk forever,
 # but not committed (PDF blobs would bloat git). Delete this line to track them.
 drafts/
+# Shareable zips built for distribution
+dist/
+.env
+# Crash log the server appends to so failures survive a closed terminal
+notes-editor.log
