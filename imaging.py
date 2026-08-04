@@ -1086,7 +1086,7 @@ def paste_overlays(img: Image.Image, overlays: list[dict], crop: dict | None,
                                ov.get("crop") or {}, ov.get("color"),
                                palette, ov.get("removals"),
                                float(ov.get("rotate", 0) or 0),
-                               ov.get("persp"))
+                               ov.get("persp"), ov.get("fixes"))
             if ov.get("shapes"):
                 src = draw_shapes(src, ov["shapes"], ov.get("crop"))
             ow = max(1, int(round(float(ov.get("w", 0.5)) * full_w)))
@@ -1099,6 +1099,59 @@ def paste_overlays(img: Image.Image, overlays: list[dict], crop: dict | None,
             x = int(round((float(ov.get("x", 0)) - cl) * full_w))
             y = int(round((float(ov.get("y", 0)) - ct) * full_h))
             img.paste(src, (x, y))           # paste clips at the page edges
+        except Exception:
+            continue
+    return img
+
+
+# ---------------------------------------------------------------------------
+# Spelling-fix patches ("fix word")
+#
+# A fix replaces one misspelled word with an AI-rewritten patch in the same
+# handwriting (see spellfix.py). Pages carry fixes as [{"id", "rect"}] where
+# rect = [x0, y0, x1, y1] fractions of the uncropped deskewed page
+# (post-removals) — the space the main preview shows, shared with shapes and
+# overlays. The patch pixels themselves live server-side in a registry; the
+# server injects a resolver here so exports, previews and overlay sources all
+# find them the same way.
+# ---------------------------------------------------------------------------
+
+_PATCH_RESOLVER = None       # fn(id) -> RGBA Image | None, set by the server
+
+
+def set_patch_resolver(fn) -> None:
+    global _PATCH_RESOLVER
+    _PATCH_RESOLVER = fn
+
+
+def apply_fixes(img: Image.Image, fixes: list[dict] | None) -> Image.Image:
+    """
+    Composite spelling-fix patches onto the page.
+
+    Runs before the crop and before any colour work: the patch is raw-colour
+    ink cut from the same page, so grading it together with the sheet keeps
+    the mended word indistinguishable from its neighbours. Patches carry
+    their own feathered alpha. A missing or malformed patch never kills the
+    page — it's just skipped (the misspelling stays visible, which is the
+    honest failure mode).
+    """
+    if not fixes or _PATCH_RESOLVER is None:
+        return img
+    W, H = img.size
+    for fx in fixes:
+        try:
+            patch = _PATCH_RESOLVER(str(fx.get("id", "")))
+            if patch is None:
+                continue
+            r = fx.get("rect") or []
+            if len(r) != 4:
+                continue
+            x0, y0 = int(round(float(r[0]) * W)), int(round(float(r[1]) * H))
+            x1, y1 = int(round(float(r[2]) * W)), int(round(float(r[3]) * H))
+            if x1 - x0 < 2 or y1 - y0 < 2:
+                continue
+            p = patch.resize((x1 - x0, y1 - y0), Image.LANCZOS)
+            img.paste(p, (x0, y0), p)
         except Exception:
             continue
     return img
@@ -1175,9 +1228,10 @@ def process_page(img: Image.Image, angle: float, crop: dict,
                  palette: dict | None = None,
                  removals: list[dict] | None = None,
                  rotate: float = 0.0,
-                 persp=None) -> Image.Image:
+                 persp=None,
+                 fixes: list[dict] | None = None) -> Image.Image:
     """Full transform for one page: rotate -> deskew -> perspective ->
-    removals -> crop -> scan/colour/palette.
+    removals -> spelling fixes -> crop -> scan/colour/palette.
 
     Rotation runs first: crop and removal fractions are recorded against the
     rotated preview, so they must be applied in that same space. The four-corner
@@ -1185,10 +1239,12 @@ def process_page(img: Image.Image, angle: float, crop: dict,
     measures the page — it keeps the sheet's size, so those fractions still mean
     what they did. Removals run before the crop because their fractions are
     recorded on the uncropped deskewed preview — applying them after the crop
-    would shift the removed band by the top-crop inset.
+    would shift the removed band by the top-crop inset. Spelling fixes land
+    right after removals (their rects live in that post-removals space) and
+    before the crop and colour work, so the mended ink is graded with the page.
     """
     geo = apply_perspective(deskew_image(rotate_page(img, rotate), angle), persp)
-    drem = apply_removals(geo, removals)
+    drem = apply_fixes(apply_removals(geo, removals), fixes)
     dcrop = apply_crop(drem, crop)
     return finish_color(dcrop, color, palette)
 
