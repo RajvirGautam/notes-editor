@@ -10,13 +10,17 @@ temp folder for the life of the process.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import json
 import os
 import re
+import subprocess
+import sys
 import time
 import uuid
 import tempfile
+import zipfile
 import atexit
 import shutil
 
@@ -302,14 +306,21 @@ def preview():
     # Removals before crop: their fractions are in uncropped-deskewed space.
     if removals:
         out = imaging.apply_removals(out, removals)
-    # Content pulled from other pages is part of the page too: where it sits
-    # past the margins the sheet grows to keep it instead of clipping it, so
-    # every step from here on works against that grown box.
+    # Content pulled from other pages is part of the page too. By default the
+    # sheet GROWS where a block sits past the margins, keeping all of it. With
+    # ovclip=1 the sheet instead stays exactly at the crop margins and anything
+    # past them is cut away — what you want inside a border frame, where a
+    # grown sheet would eat into the frame's own margins.
     overlays = _overlays_from_args(request.args)
-    ecrop = imaging.expanded_crop(crop, overlays)
+    ov_clip = request.args.get("ovclip", "") in ("1", "true", "yes")
+    ecrop = crop if ov_clip else imaging.expanded_crop(crop, overlays)
     if ecrop:
         out = imaging.apply_crop(out, ecrop)
     out = imaging.finish_color(out, color, palette)
+    # Free-canvas page: its own content is floating as one of the blocks below,
+    # so the sheet itself is blank paper — the blocks are the whole page.
+    if request.args.get("blank", "") in ("1", "true", "yes"):
+        out = Image.new("RGB", out.size, (255, 255, 255))
     # Merged-page overlays sit under the watermark, exactly like on export.
     if overlays:
         out = imaging.paste_overlays(
@@ -432,13 +443,17 @@ def export():
     wm_dx = float(data.get("wmDx", 0) or 0)
     wm_dy = float(data.get("wmDy", 0) or 0)
     wm_center_margins = bool(data.get("wmCenterMargins", False))
+    # Pulled content past the crop margins: grow the sheet to keep it (default,
+    # the old behaviour) or keep the sheet at the margins and crop it away.
+    ov_clip = bool(data.get("ovClip", False))
     job = _job(job_id)
     palette = job.get("palette")
 
     # Borders (branded frames + chapter header + optional board/stream cover).
     bd = data.get("borders") or {}
     bd_on = bool(bd.get("on"))
-    bcfg = bcover = brenderer = None
+    bcfg = brenderer = None
+    bcovers: list = []          # [(board, cover path|None)] — one export each
     btpls: list = []
     bnumber = str(bd.get("number", "") or "")
     bname = str(bd.get("name", "") or "")
@@ -459,15 +474,22 @@ def export():
         if not btpls:
             return jsonify({"error": f"no border templates for class {bcls} "
                             f"yet — add PNGs to borders/{bcls}/templates/"}), 400
-        bboard = str(bd.get("board", "") or "")
         bstream = str(bd.get("stream", "") or "")
-        if bboard:
+        # One export per board — identical pages, a different cover as page 1.
+        # New clients send "boards": ["MP Board", "RJ Board"]; older ones (and
+        # reopened drafts) send a single "board".
+        bboards = [str(b).strip() for b in (bd.get("boards") or [])
+                   if str(b).strip()]
+        if not bboards and str(bd.get("board", "") or ""):
+            bboards = [str(bd["board"]).strip()]
+        for bboard in bboards:
             # Streamless classes (10th) store covers under the board alone;
             # a board picked without a stream where streams DO exist simply
             # exports without a cover, as before.
-            bcover = borders.find_cover(bcls, bboard, bstream)
-            if bcover is None and bstream:
+            cover = borders.find_cover(bcls, bboard, bstream)
+            if cover is None and bstream:
                 return jsonify({"error": f"no cover page for {bboard} / {bstream}"}), 400
+            bcovers.append((bboard, cover))
         brenderer = borders.HeaderRenderer(bcfg, bnumber, bname)
 
     # Every loaded PDF exports into ONE document, in rail order — an export is
@@ -524,10 +546,15 @@ def export():
                 # it sits past the margins the sheet grows to keep it instead of
                 # clipping it. Everything downstream measures against that grown
                 # box — only the watermark still anchors to the real margins.
-                ecrop = imaging.expanded_crop(crop, ps.get("overlays"))
+                ecrop = (crop if ov_clip
+                         else imaging.expanded_crop(crop, ps.get("overlays")))
                 hi = imaging.render_page(doc, i, dpi)
                 processed = imaging.process_page(hi, angle, ecrop, color, palette,
                                                  removals, rot)
+                # Free-canvas page: blank sheet, everything visible on it is a
+                # floating block (including this page's own content).
+                if ps.get("blank"):
+                    processed = Image.new("RGB", processed.size, (255, 255, 255))
                 if ps.get("overlays"):
                     processed = imaging.paste_overlays(
                         processed, ps["overlays"], ecrop, palette,
@@ -585,18 +612,39 @@ def export():
     if not out_images:
         return jsonify({"error": "every page is deleted — nothing to export"}), 400
 
-    # The cover belongs at the very front of the one document, not per file.
-    if bd_on and bcover is not None:
-        out_images.insert(0, borders.load_cover(
-            bcover, bcfg["template_size"]).convert("RGB"))
+    base_name = _export_name(job["files"][0]["name"], bd_on, bnumber, bname)
 
-    out_name = _export_name(job["files"][0]["name"], bd_on, bnumber, bname)
-    buf = io.BytesIO()
-    out_images[0].save(buf, "PDF", resolution=float(dpi),
-                       save_all=True, append_images=out_images[1:])
-    buf.seek(0)
-    return send_file(buf, mimetype="application/pdf",
-                     as_attachment=True, download_name=out_name)
+    def _build(cover_path) -> io.BytesIO:
+        """One PDF: the pages just rendered, behind this board's cover."""
+        # The cover belongs at the very front of the one document, not per
+        # file. The body images are shared between boards — rendering them
+        # once is the whole point, so nothing here mutates them.
+        pages = list(out_images)
+        if cover_path is not None:
+            pages.insert(0, borders.load_cover(
+                cover_path, bcfg["template_size"]).convert("RGB"))
+        buf = io.BytesIO()
+        pages[0].save(buf, "PDF", resolution=float(dpi),
+                      save_all=True, append_images=pages[1:])
+        buf.seek(0)
+        return buf
+
+    # Several boards picked → the same notes come back once per board, each
+    # with its own cover, bundled in a zip (browsers only take one download).
+    if bd_on and len(bcovers) > 1:
+        stem = os.path.splitext(base_name)[0]
+        zbuf = io.BytesIO()
+        with zipfile.ZipFile(zbuf, "w", zipfile.ZIP_STORED) as zf:
+            for board, cover in bcovers:
+                tag = re.sub(r'[\\/:*?"<>|]+', "", board).strip()
+                zf.writestr(f"{stem} ({tag}).pdf", _build(cover).getvalue())
+        zbuf.seek(0)
+        return send_file(zbuf, mimetype="application/zip", as_attachment=True,
+                         download_name=f"{stem}.zip")
+
+    cover = bcovers[0][1] if (bd_on and bcovers) else None
+    return send_file(_build(cover), mimetype="application/pdf",
+                     as_attachment=True, download_name=base_name)
 
 
 # ---------------------------------------------------------------------------
@@ -902,6 +950,210 @@ def borders_template():
     resp = Response(data, mimetype="image/png")
     resp.headers["Cache-Control"] = "public, max-age=86400"
     return resp
+
+
+# ---------------------------------------------------------------------------
+# Library (the dashboard of PDFs sitting in a folder on this machine)
+# ---------------------------------------------------------------------------
+# Instead of dragging files in every time, the editor opens on a grid of the
+# PDFs found in one folder. Clicking a card copies that PDF into a working
+# job — exactly what an upload does — so nothing downstream changes and the
+# original file on disk is never touched.
+
+LIBRARY_CFG = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "library_folder.txt")
+DEFAULT_LIBRARY = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "library")
+# (path, mtime, size) -> JPEG bytes of page 1
+_LIB_THUMBS: dict = {}
+
+
+def _library_dir() -> str:
+    """
+    Folder the dashboard lists. A folder chosen in the UI (saved to
+    library_folder.txt) wins; otherwise $NOTES_LIBRARY; otherwise ./library.
+    """
+    try:
+        with open(LIBRARY_CFG, encoding="utf-8") as fh:
+            saved = fh.read().strip()
+        if saved:
+            return os.path.abspath(os.path.expanduser(saved))
+    except OSError:
+        pass
+    env = (os.environ.get("NOTES_LIBRARY") or "").strip()
+    if env:
+        return os.path.abspath(os.path.expanduser(env))
+    return DEFAULT_LIBRARY
+
+
+def _library_files() -> tuple[str, list]:
+    """(folder, [{id, name, pages, size, mtime}]) for every PDF in the folder."""
+    folder = _library_dir()
+    out: list = []
+    if not os.path.isdir(folder):
+        return folder, out
+    for name in sorted(os.listdir(folder), key=str.lower):
+        if name.startswith(".") or not name.lower().endswith(".pdf"):
+            continue
+        path = os.path.join(folder, name)
+        if not os.path.isfile(path):
+            continue
+        try:
+            st = os.stat(path)
+        except OSError:
+            continue
+        pages = None
+        try:
+            doc = fitz.open(path)
+            pages = doc.page_count
+            doc.close()
+        except Exception:
+            pages = None          # unreadable/encrypted — still listed, greyed
+        out.append({
+            "id": hashlib.sha1(name.encode("utf-8")).hexdigest()[:12],
+            "name": name,
+            "pages": pages,
+            "size": st.st_size,
+            "mtime": st.st_mtime,
+        })
+    return folder, out
+
+
+def _library_path(fid: str) -> tuple[str, dict]:
+    """Resolve a card id back to a file. Ids come from the listing, so a
+    crafted id can never point outside the folder."""
+    folder, files = _library_files()
+    for f in files:
+        if f["id"] == fid:
+            return os.path.join(folder, f["name"]), f
+    abort(404, "no such file in the library folder")
+
+
+@app.route("/api/library")
+def library_list():
+    folder, files = _library_files()
+    return jsonify({"folder": folder, "exists": os.path.isdir(folder),
+                    "files": files})
+
+
+@app.route("/api/library/folder", methods=["POST"])
+def library_folder():
+    """Point the dashboard at another folder and remember it across restarts."""
+    raw = ((request.json or {}).get("path") or "").strip()
+    if not raw:
+        return jsonify({"error": "no folder given"}), 400
+    path = os.path.abspath(os.path.expanduser(raw))
+    if not os.path.isdir(path):
+        return jsonify({"error": f"not a folder: {path}"}), 400
+    with open(LIBRARY_CFG, "w", encoding="utf-8") as fh:
+        fh.write(path + "\n")
+    folder, files = _library_files()
+    return jsonify({"folder": folder, "exists": True, "files": files})
+
+
+@app.route("/api/library/browse", methods=["POST"])
+def library_browse():
+    """
+    Pop the real Finder "choose folder" dialog and adopt what's picked.
+
+    The server is local, so it can drive the desktop: a browser can never hand
+    back a true filesystem path, but AppleScript can. Non-macOS (or a missing
+    osascript) reports unsupported and the UI falls back to typing the path.
+    """
+    if sys.platform != "darwin" or not shutil.which("osascript"):
+        return jsonify({"error": "unsupported", "unsupported": True}), 400
+
+    start = _library_dir()
+    default = ""
+    if os.path.isdir(start):
+        # AppleScript strings escape backslash and quote, nothing else.
+        safe = start.replace("\\", "\\\\").replace('"', '\\"')
+        default = f'default location (POSIX file "{safe}") '
+    script = (
+        'tell application "System Events"\n'          # bring the dialog forward
+        '  activate\n'
+        f'  set theFolder to choose folder with prompt '
+        f'"Choose the folder holding your PDFs" {default}\n'
+        'end tell\n'
+        'return POSIX path of theFolder'
+    )
+    try:
+        proc = subprocess.run(["osascript", "-e", script],
+                              capture_output=True, text=True, timeout=300)
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "the folder chooser timed out"}), 400
+
+    if proc.returncode != 0:
+        # -128 / "User canceled" is the normal way out of the dialog.
+        if "canceled" in (proc.stderr or "").lower() or "-128" in (proc.stderr or ""):
+            return jsonify({"cancelled": True})
+        return jsonify({"error": (proc.stderr or "could not open the chooser").strip()}), 400
+
+    path = (proc.stdout or "").strip().rstrip("/") or "/"
+    if not os.path.isdir(path):
+        return jsonify({"error": f"not a folder: {path}"}), 400
+    with open(LIBRARY_CFG, "w", encoding="utf-8") as fh:
+        fh.write(path + "\n")
+    folder, files = _library_files()
+    return jsonify({"folder": folder, "exists": True, "files": files})
+
+
+@app.route("/api/library/thumb")
+def library_thumb():
+    """Small JPEG of page 1, for the dashboard card."""
+    path, meta = _library_path(request.args.get("id", ""))
+    key = (path, meta["mtime"], meta["size"])
+    data = _LIB_THUMBS.get(key)
+    if data is None:
+        try:
+            doc = fitz.open(path)
+            img = imaging.render_page(doc, 0, 40)
+            doc.close()
+        except Exception:
+            abort(404, "cannot render this PDF")
+        buf = io.BytesIO()
+        img.convert("RGB").save(buf, "JPEG", quality=70)
+        data = buf.getvalue()
+        _LIB_THUMBS[key] = data
+    resp = Response(data, mimetype="image/jpeg")
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+@app.route("/api/library/open", methods=["POST"])
+def library_open():
+    """
+    Open one (or several) library PDFs as a new editing job. The response is
+    the same shape /api/upload returns, so the editor ingests it unchanged.
+    """
+    body = request.json or {}
+    ids = body.get("ids") or ([body["id"]] if body.get("id") else [])
+    if not ids:
+        return jsonify({"error": "no file selected"}), 400
+
+    job_id = uuid.uuid4().hex[:12]
+    job_dir = os.path.join(WORK_DIR, job_id)
+    os.makedirs(job_dir, exist_ok=True)
+    files = []
+    for lid in ids:
+        src, meta = _library_path(lid)
+        fid = uuid.uuid4().hex[:8]
+        path = os.path.join(job_dir, f"{fid}.pdf")
+        shutil.copy2(src, path)          # edits never touch the original
+        try:
+            pages = _analyse_pages(job_id, fid, path)
+        except Exception as e:
+            shutil.rmtree(job_dir, ignore_errors=True)
+            return jsonify({"error": f"{meta['name']}: {e}"}), 400
+        files.append({"fid": fid, "name": meta["name"], "path": path,
+                      "npages": len(pages), "pages": pages})
+
+    JOBS[job_id] = {"files": files, "dir": job_dir}
+    payload_files = [{"fid": f["fid"], "name": f["name"],
+                      "npages": f["npages"], "pages": f["pages"]}
+                     for f in files]
+    return jsonify({"job": job_id, "files": payload_files, "appended": False,
+                    "library": True})
 
 
 if __name__ == "__main__":

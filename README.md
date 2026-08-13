@@ -6,6 +6,15 @@ Drop in one or more PDFs; every page is automatically de-tilted and its margins
 auto-detected. Fine-tune the angle and drag the margin guides per page (or copy
 one page's settings to the whole batch), then export clean PDFs.
 
+## Library (the opening screen)
+
+The editor opens on a grid of every PDF in one folder on this machine — click a
+card to straighten/crop/export it. **📁 Change folder…** opens the real Finder
+chooser and the pick is remembered across restarts (`library_folder.txt`, or
+`$NOTES_LIBRARY`, else `./library`). Opening a card copies the PDF into a
+working job; the file on disk is never modified. Dropping files onto the
+dashboard still works.
+
 ## Run
 
 ```bash
@@ -34,6 +43,19 @@ To use a specific Python: `PYTHON=python3.12 ./run.sh`
   `Auto-detect` / `No crop` reset the page.
 - **Apply to batch** — copy the current page's angle or margins to *every* page
   in *every* loaded PDF (great when all scans share the same margins).
+- **Free canvas** — the page stops being a fixed backdrop: its own content is
+  lifted into a floating block like any pulled one, and the sheet behind them
+  becomes blank paper bounded by the crop margins (i.e. the border frame's
+  window). Two, three or ten pages then sit on one canvas as equals — each
+  moved, resized, cropped, tilted and colour-tuned on its own, none of them
+  "the background". With a border on, the canvas is reshaped to the frame's
+  window exactly (grown outward with blank paper, never cropped), so it fills
+  the window edge to edge and the page contributes **no margins of its own** —
+  the only margins are the border's. *⤢ Canvas = border window* re-applies that
+  after you drag the guides or change class. It switches on by itself the
+  moment you pull a page in;
+  the checkbox in *Merge pages* turns it off again (the page goes back to
+  being the backdrop and its block disappears).
 - **Merge pages** — pull another page's content onto the current page when both
   are half-empty: click *📥 Pull content from another page*, then click the
   source page's thumbnail in the left rail. The pulled content lands under the
@@ -42,9 +64,16 @@ To use a specific Python: `PYTHON=python3.12 ./run.sh`
   like). The source page is deleted automatically (untick the checkbox to keep
   it, or restore it from its thumbnail). The block follows the source page's
   crop/tilt/colour live, and export + thumbnails composite it exactly as shown.
-  A block parked past the crop margins still exports in full — the sheet grows
-  outward (blank paper) to keep it, rather than clipping it at the margin. Use
-  *⤵ Fit inside the margins* if you'd rather keep the sheet at its trimmed size.
+  *✂ Crop on the page* puts four blue guides on the selected block — drag an
+  edge to trim that content. The rest stays exactly where it was, at the same
+  size; only the block's box tightens, so what's underneath is revealed. It
+  edits the block's own crop, never the source page (*Follow source margins*
+  undoes it), and the exact percentages sit in the *Trim margins* boxes.
+  A block parked past the crop margins is **cropped off** and the sheet keeps
+  its size, so a border frame keeps its own margins and simply sits over the
+  page. Untick *Keep the sheet at the crop margins* to get the old behaviour
+  instead: the sheet grows outward (blank paper) to keep every bit of the
+  block. Either way, *⤵ Fit inside the margins* pulls it back inside.
 - **Shape filler** — hide anything on a page under a filled free polygon:
   *🔷 Draw polygon*, click to place points, click the first (green) point or
   press Enter to close. Drag the white dots to move points; dragging a purple
@@ -67,8 +96,12 @@ PYQs) wraps every exported page in the branded Arivihan frame:
 - **Chapter no. + name** are stamped into the header pill
   (`CHAPTER - 05 | Name`, Urbanist, auto-shrinking/wrapping), rendered as real
   HTML/CSS with headless Chromium on export (Pillow fallback if missing).
-- **Board + stream** attach that cover from `borders/<class>/front_pages/`
-  (named `Board__Stream.jpg`) as page 1 of the export.
+- **Boards** is multi-select: each ticked board attaches its cover from
+  `borders/<class>/front_pages/` (named `Board__Stream.jpg`) as page 1. Tick
+  one and the export is a plain PDF; tick several and it comes back as a zip
+  holding the same notes once per board (`… (MP Board).pdf`, `… (RJ Board).pdf`
+  …). The pages are rendered once and reused behind each cover, so extra boards
+  cost almost nothing.
 - Frame designs in `borders/<class>/templates/` cycle page by page.
 - **Fit modes** (toggle chips — click an active one to go back to whole-page
   fit): **Fit width** (on by default; the composer's "my pages are not A4"

@@ -5,3 +5,5 @@ __pycache__/
 # Saved editing drafts (PDF snapshots + edit state) — kept on disk forever,
 # but not committed (PDF blobs would bloat git). Delete this line to track them.
 drafts/
+library_folder.txt
+library/

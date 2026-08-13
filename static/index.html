@@ -200,16 +200,38 @@
   .unit{color:var(--mut);font-size:12px}
   select{background:var(--panel2);border:1px solid var(--line);border-radius:6px;
     color:var(--txt);padding:6px 8px;font:inherit}
-  /* dropzone */
+  /* library dashboard (also the drop target) */
   #drop{position:absolute;inset:18px;display:flex;flex-direction:column;
-    align-items:center;justify-content:center;gap:14px;color:var(--mut);
-    text-align:center;padding:30px;background:#16151d;
-    border:2px dashed #2e2c3c;border-radius:20px}
+    gap:14px;color:var(--mut);padding:22px;background:#16151d;
+    border:2px dashed #2e2c3c;border-radius:20px;overflow:auto}
   #drop.hidden{display:none}
-  #drop .big{font-size:38px}
-  #drop strong{color:var(--txt);font-size:17px}
   #drop.hot{background:#221d33;border-color:var(--acc);color:var(--txt)}
-  #drop .hint{max-width:340px;font-size:13px}
+  #drop .hint{font-size:13px}
+  #libHead{display:flex;align-items:flex-end;justify-content:space-between;
+    gap:16px;flex-wrap:wrap}
+  .lib-title{color:var(--txt);font-size:19px;font-weight:700}
+  .lib-path{font-family:ui-monospace,Menlo,monospace;margin-top:4px;
+    word-break:break-all}
+  #libGrid{display:grid;gap:16px;
+    grid-template-columns:repeat(auto-fill,minmax(170px,1fr))}
+  .lib-card{background:var(--panel2);border:1px solid var(--line);
+    border-radius:12px;overflow:hidden;cursor:pointer;text-align:left;
+    padding:0;color:var(--txt);font:inherit;display:flex;
+    flex-direction:column;transition:border-color .12s,transform .12s}
+  .lib-card:hover{border-color:var(--acc);transform:translateY(-2px)}
+  .lib-card .lc-thumb{aspect-ratio:1/1.35;background:#0f0e14;display:flex;
+    align-items:center;justify-content:center;overflow:hidden}
+  .lib-card .lc-thumb img{width:100%;height:100%;object-fit:cover;
+    object-position:top center}
+  .lib-card .lc-meta{padding:9px 10px;border-top:1px solid var(--line)}
+  .lib-card .lc-name{font-size:12.5px;font-weight:600;line-height:1.3;
+    word-break:break-word}
+  .lib-card .lc-sub{color:var(--mut);font-size:11px;margin-top:3px}
+  .lib-card.busy{opacity:.55;pointer-events:none}
+  .lib-empty{color:var(--mut);font-size:13.5px;line-height:1.6;
+    background:var(--panel2);border:1px solid var(--line);border-radius:12px;
+    padding:18px}
+  .lib-empty code{font-family:ui-monospace,Menlo,monospace;color:var(--txt)}
   .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
     background:var(--panel2);border:1px solid var(--line);padding:10px 16px;
     border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.5);z-index:50}
@@ -274,6 +296,14 @@
      clipped, and the marker below just says so. */
   #ovLayer{position:absolute;inset:0;z-index:5;pointer-events:none}
   #frame.ov-editing #ovLayer{z-index:6}
+  /* Clip mode: the sheet stops at the crop margins, so the frame art, its
+     paper-fill bars and the dimmed cut-away regions all paint ON TOP of any
+     pulled content that hangs past them — the preview then shows exactly what
+     the export keeps. The guides stay on top of everything so they're still
+     grabbable. */
+  #frame.ov-clip #borderLayer{z-index:7}
+  #frame.ov-clip .shade{z-index:7}
+  #frame.ov-clip .guide{z-index:8}
   #frame.before #ovLayer,#frame.deleted #ovLayer{display:none}
   #frame.magic-mode #ovLayer .ov-item{pointer-events:none}
   .ov-item{position:absolute;pointer-events:auto;cursor:grab;line-height:0;
@@ -291,6 +321,18 @@
   .ov-item .ov-handle{position:absolute;right:-8px;bottom:-8px;width:14px;height:14px;
     border-radius:4px;background:var(--acc);border:2px solid #fff;cursor:nwse-resize}
   .ov-item.selected{outline:2px solid var(--acc);outline-offset:1px}
+  /* crop mode: four edge guides that trim the pulled content itself, exactly
+     like the page's own margin guides. Only on the selected block, only while
+     the mode is on, so a normal drag still moves the block. */
+  .ov-item .ov-crop{position:absolute;display:none;background:rgba(93,110,232,.45);
+    box-shadow:0 0 0 1px rgba(255,255,255,.35) inset;z-index:2}
+  .ov-item.cropping .ov-crop{display:block}
+  .ov-item.cropping{cursor:default;overflow:hidden}
+  .ov-item .ov-crop.cl{left:0;top:0;bottom:0;width:7px;cursor:ew-resize}
+  .ov-item .ov-crop.cr{right:0;top:0;bottom:0;width:7px;cursor:ew-resize}
+  .ov-item .ov-crop.ct{top:0;left:0;right:0;height:7px;cursor:ns-resize}
+  .ov-item .ov-crop.cb{bottom:0;left:0;right:0;height:7px;cursor:ns-resize}
+  .ov-item.cropping .ov-handle,.ov-item.cropping .ov-stretch{display:none}
   /* Sticking out past the crop margins: exports in full — the sheet grows on
      that side. Flagged in an informational tone, not a warning one. */
   .ov-item.outside{outline:2px dashed #4fc3f7}
@@ -400,12 +442,20 @@
     </div>
     <div id="canvasArea">
       <div id="drop">
-        <div class="big">📄↻</div>
-        <div><strong>Drop scanned note PDFs here</strong></div>
-        <div class="hint">Each page is auto-straightened and its margins auto-detected.
-          Fine-tune the angle and drag the blue guides, then Export.
-          Batch multiple PDFs at once — nothing leaves your computer.</div>
-        <button id="pickBtn" class="primary">Choose PDFs</button>
+        <div id="libHead">
+          <div class="lib-h">
+            <div class="lib-title">📚 Notes library</div>
+            <div class="lib-path muted" id="libPath">…</div>
+          </div>
+          <div class="btnrow">
+            <button id="libRefresh" title="Re-scan the folder">⟳ Refresh</button>
+            <button id="libFolder" title="List a different folder">📁 Change folder…</button>
+            <button id="pickBtn">⇪ Open other PDFs…</button>
+          </div>
+        </div>
+        <div id="libGrid"></div>
+        <div id="libNote" class="hint">Click a PDF to straighten, crop and export it —
+          or drop files anywhere on this panel. Nothing leaves your computer.</div>
       </div>
       <div id="frameWrap" style="display:none">
       <div id="frame">
@@ -483,11 +533,29 @@
           onto this page, then drag it anywhere and resize it with the corner
           handle — perfect when two half-empty pages should become one.</div>
         <button id="mergePickBtn" style="width:100%">📥 Pull content from another page…</button>
+        <div class="btnrow" style="margin:8px 0 0">
+          <button id="ovCanvasFitBtn" style="flex:1"
+            title="Reshape the canvas to the border window so the page adds no margins of its own">⤢ Canvas = border window</button>
+        </div>
+        <label class="row" style="margin:8px 0 6px;gap:8px">
+          <input type="checkbox" id="ovCanvasChk"
+            style="accent-color:var(--acc);width:auto;flex:0 0 auto"/>
+          <span class="muted" style="flex:1;width:auto">Free canvas — this page's
+            own content floats as a block too, on blank paper bounded by the
+            margins. Turns on by itself when you pull a page in, so two or three
+            pages sit here as equals, none of them the background.</span></label>
         <label class="row" style="margin:8px 0 6px;gap:8px">
           <input type="checkbox" id="mergeDelSrc" checked
             style="accent-color:var(--acc);width:auto;flex:0 0 auto"/>
           <span class="muted" style="flex:1;width:auto">Delete the source page after
             pulling (restore it any time from its thumbnail)</span></label>
+        <label class="row" style="margin:8px 0 6px;gap:8px">
+          <input type="checkbox" id="ovClipChk" checked
+            style="accent-color:var(--acc);width:auto;flex:0 0 auto"/>
+          <span class="muted" style="flex:1;width:auto">Keep the sheet at the crop
+            margins — anything pulled past them is cropped off, and a border frame
+            keeps its own margins and sits over the page (untick to grow the sheet
+            instead, adding blank paper)</span></label>
         <div id="ovList"></div>
       </div>
     </div>
@@ -516,6 +584,10 @@
           <input type="range" id="ovX" min="-20" max="120" step="1"/></div>
         <div class="crow"><span>Vertical</span><span id="vOvY" class="unit">0%</span>
           <input type="range" id="ovY" min="-20" max="120" step="1"/></div>
+
+        <div class="btnrow" style="margin:10px 0 8px">
+          <button id="ovCropBtn" style="flex:1" title="Drag the blue edges on the page to trim this content">✂ Crop on the page</button>
+        </div>
 
         <div class="muted" style="margin:10px 0 6px">Trim margins <span class="unit">(% of the source page)</span></div>
         <div class="row"><label>Top</label>
@@ -846,8 +918,8 @@
           <input type="text" id="bdNum" placeholder="05" maxlength="4" style="flex:1"/></div>
         <div class="row"><label>Chapter</label>
           <input type="text" id="bdName" placeholder="Chapter name" style="flex:1"/></div>
-        <div class="row"><label>Board</label>
-          <select id="bdBoard" style="flex:1"><option value="">— no cover —</option></select></div>
+        <div class="row" style="align-items:flex-start"><label style="padding-top:5px">Boards</label>
+          <div id="bdBoards" style="flex:1;display:flex;flex-wrap:wrap;gap:6px"></div></div>
         <div class="row" id="bdStreamRow"><label>Stream</label>
           <select id="bdStream" style="flex:1" disabled><option value="">— stream —</option></select></div>
         <div id="bdInfo" class="muted"></div>
@@ -887,6 +959,12 @@ const state = {
   magicMode:false,                  // magic remover tool active flag
   mergePick:false,                  // merge-pages: waiting for a source page pick
   ovSel:-1,                         // index of the selected pulled-content overlay
+  ovCropMode:false,                 // edge guides on the selected block trim it
+  // Pulled content parked past the crop margins: false = the sheet grows to
+  // keep all of it (blank paper appears); true = the sheet stays exactly at
+  // the margins and the overhang is cropped away, so a border frame keeps its
+  // own margins and simply sits over the page.
+  clipOv:true,
   shapeDraw:false,                  // shape filler: placing polygon points
   shapePick:false,                  // shape filler: eyedropper (pick colour from page)
   shapeSel:-1,                      // index of the selected shape on this page
@@ -909,7 +987,7 @@ const state = {
   // stretchW/stretchH scale each axis on its own.
   // Global border settings; each page carries its own fit in p.bfit
   // (mode 'page'|'width'|'fill' + zoom + per-axis stretch).
-  borders:{on:false, cls:'', board:'', stream:'', number:'', name:''},
+  borders:{on:false, cls:'', board:'', boards:[], stream:'', number:'', name:''},
   // persistent draft this session is tied to (set after a save or when a
   // draft is reopened) — re-exports update it instead of duplicating.
   draftId:null,
@@ -956,7 +1034,7 @@ function snapshot(){
   return JSON.stringify({
     files: state.files.map(f=>({
       pages: f.pages.map(p=>({src:p.src, angle:p.angle, rotate:p.rotate||0, crop:{...p.crop},
-        removals:[...(p.removals||[])],
+        removals:[...(p.removals||[])], canvas:!!p.canvas,
         overlays:(p.overlays||[]).map(copyOv),
         shapes:copyShapes(p.shapes),
         color:{...p.color}, bfit:{...(p.bfit||DEF_BFIT)}, deleted:!!p.deleted,
@@ -964,6 +1042,7 @@ function snapshot(){
     })),
     watermark: {...state.watermark},
     borders: {...state.borders},
+    clipOv: !!state.clipOv,
     palette: state.palette,
     fi: state.fi, pi: state.pi,
   });
@@ -1017,6 +1096,7 @@ function applySnapshot(str){
       p.angle = sp.angle; p.rotate = sp.rotate||0;
       p.crop = {...sp.crop}; p.color = {...sp.color};
       p.removals = sp.removals ? [...sp.removals] : [];
+      p.canvas = !!sp.canvas;
       p.overlays = (sp.overlays||[]).map(copyOv);
       p.shapes = copyShapes(sp.shapes);
       p.bfit = {...DEF_BFIT, ...(sp.bfit||legacyBfit||{})};
@@ -1025,9 +1105,11 @@ function applySnapshot(str){
     });
   });
   state.watermark = {scope:'all', ...s.watermark};   // old snapshots lack scope
+  state.clipOv = s.clipOv!==false;                  // older snapshots lack it
   if(s.borders){
     const sb=s.borders;
     state.borders={on:!!sb.on, cls:sb.cls||state.borders.cls, board:sb.board||'',
+                   boards:[...(sb.boards||(sb.board?[sb.board]:[]))],
                    stream:sb.stream||'', number:sb.number||'', name:sb.name||''};
   }
   state.palette = s.palette;
@@ -1133,6 +1215,108 @@ function ingest(data){
   renderRail(); loadPage(); syncDeletedUI(); syncPyqBtn();
 }
 
+// ---- library dashboard --------------------------------------------------
+// The opening screen: every PDF sitting in one folder on this machine, as a
+// grid of cards. Clicking one asks the server to copy it into a fresh job
+// (the original file on disk is never modified) and hands the editor the same
+// payload an upload would produce.
+const lib={folder:'', exists:false, files:[]};
+
+async function loadLibrary(){
+  try{
+    const r=await fetch('/api/library');
+    const d=await r.json();
+    Object.assign(lib, d);
+  }catch(e){ lib.files=[]; lib.exists=false; }
+  renderLibrary();
+}
+function renderLibrary(){
+  $('#libPath').textContent=lib.folder||'—';
+  const grid=$('#libGrid'), note=$('#libNote');
+  grid.innerHTML='';
+  if(!lib.files.length){
+    note.style.display='none';
+    const box=document.createElement('div');
+    box.className='lib-empty';
+    box.innerHTML = lib.exists
+      ? `No PDFs in <code>${esc(lib.folder)}</code>.<br>Put your PDFs there and hit
+         <b>⟳ Refresh</b>, or pick a different folder with <b>📁 Change folder…</b>.`
+      : `The folder <code>${esc(lib.folder)}</code> doesn't exist yet.<br>Create it and
+         drop your PDFs in, or point the dashboard elsewhere with
+         <b>📁 Change folder…</b>.`;
+    grid.appendChild(box);
+    return;
+  }
+  note.style.display='';
+  lib.files.forEach(f=>{
+    const card=document.createElement('button');
+    card.className='lib-card'; card.type='button';
+    card.title=`Open ${f.name}`;
+    const pages = f.pages==null ? 'unreadable PDF'
+                : `${f.pages} page${f.pages===1?'':'s'}`;
+    card.innerHTML=`<div class="lc-thumb"><img loading="lazy" alt=""
+        src="/api/library/thumb?id=${encodeURIComponent(f.id)}"></div>
+      <div class="lc-meta"><div class="lc-name">${esc(f.name)}</div>
+        <div class="lc-sub">${pages} · ${fmtSize(f.size)}</div></div>`;
+    card.querySelector('img').onerror=e=>{
+      e.target.replaceWith(Object.assign(document.createElement('div'),
+        {className:'big',textContent:'📄',style:'font-size:34px'}));
+    };
+    card.onclick=()=>openLibraryFile(f, card);
+    grid.appendChild(card);
+  });
+}
+function fmtSize(n){
+  if(!n) return '—';
+  return n>=1048576 ? (n/1048576).toFixed(1)+' MB' : Math.round(n/1024)+' KB';
+}
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>(
+  {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+async function openLibraryFile(f, card){
+  card && card.classList.add('busy');
+  const t=toast(`<span class="spinner"></span> Opening ${esc(f.name)} — straightening ${f.pages||''} page(s)…`,0);
+  try{
+    const r=await fetch('/api/library/open',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id:f.id})});
+    const data=await r.json();
+    if(!r.ok) throw new Error(data.error||'could not open');
+    ingest(data);
+  }catch(e){ toast('Error: '+e.message); }
+  finally{ t.remove(); card && card.classList.remove('busy'); }
+}
+$('#libRefresh').onclick=()=>loadLibrary();
+// A browser can't hand back a real folder path, so the local server opens the
+// actual Finder chooser for us (AppleScript). Anywhere that isn't a Mac — or
+// if the chooser can't run — falls back to typing the path.
+async function pickFolderTyped(){
+  const p=prompt('Full path of the folder holding your PDFs:', lib.folder||'');
+  if(!p) return;
+  await setLibraryFolder('/api/library/folder',{path:p});
+}
+async function setLibraryFolder(url, body){
+  try{
+    const r=await fetch(url,{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
+    const d=await r.json();
+    if(!r.ok){
+      if(d.unsupported){ await pickFolderTyped(); return; }
+      throw new Error(d.error||'could not use that folder');
+    }
+    if(d.cancelled) return;                    // dialog dismissed — leave as is
+    Object.assign(lib,d); renderLibrary();
+    toast(`📚 Listing ${d.files.length} PDF(s) from ${d.folder}`);
+  }catch(e){ toast('Error: '+e.message); }
+}
+$('#libFolder').onclick=async()=>{
+  const btn=$('#libFolder'); btn.disabled=true;
+  const t=toast('<span class="spinner"></span> Choose a folder in the Finder window…',0);
+  try{ await setLibraryFolder('/api/library/browse'); }
+  finally{ t.remove(); btn.disabled=false; }
+};
+loadLibrary();
+
 // ---- discard current job & start over -----------------------------------
 // Wipes all loaded files and edits back to the empty drop screen. The palette,
 // watermark and colour sample all reset too, so the next PDF opens clean.
@@ -1144,13 +1328,15 @@ function discardJob(){
   if(state.shapePick) setShapePick(false);
   state.before=false; state.palette=null; state.paletteVersion++;
   state.watermark={on:false, scope:'all', opacity:1, scale:1.3, rotate:0, dx:0, dy:0, centerMargins:true};
-  state.borders={on:false, cls:state.borders.cls, board:'', stream:'', number:'', name:''};
+  state.clipOv=true;
+  state.borders={on:false, cls:state.borders.cls, board:'', boards:[], stream:'', number:'', name:''};
   for(const k in cards) delete cards[k];
   reorderOn.clear();
   $('#railBody').innerHTML='<div class="emptyRail"><div class="er-ico">📂</div><div class="er-title">No files yet.</div><div class="muted">Add PDF files to get started.</div></div>';
   $('#frameWrap').style.display='none';
   unpinFrame();
   $('#drop').classList.remove('hidden');
+  loadLibrary();                    // folder may have gained/lost PDFs meanwhile
   $('#exportBtn').disabled=true;
   $('#discardBtn').disabled=true;
   $('#jobinfo').textContent='Straighten & crop scanned notes — fully local';
@@ -1229,6 +1415,7 @@ function thumbUrl(fi,pi){
   return `/api/preview?job=${state.job}&fid=${f.fid}&page=${p.src??pi}&angle=${p.angle}`
     +`&rot=${p.rotate||0}`
     +colorQuery(p.color)+wmQuery(p)+removalsQuery(p.removals)+ovQuery(p)+shapesQuery(p)
+    +(p.canvas?'&blank=1':'')
     +`&crl=${c.left}&crt=${c.top}&crr=${c.right}&crb=${c.bottom}`
     +`&maxdim=${thumbDim()}&pv=${state.paletteVersion}`;
 }
@@ -1380,7 +1567,7 @@ function loadPage(){
   state.pendingGaps = [];           // selections don't carry across pages
   flushShapeDraft();                // an open polygon closes onto its own page
   state.shapeSel=-1; state.shapeDraft=[]; state.shapeDraftAt=null;
-  state.ovSel=-1;                   // neither does the pulled-content selection
+  state.ovSel=-1; state.ovCropMode=false;   // neither does the pulled-content selection
   if(state.shapeDraw) setShapeDraw(false);
   if(state.shapePick) setShapePick(false);
   $('#pageLabel').textContent=`${f.name} — page ${state.pi+1} / ${f.npages}`;
@@ -1412,7 +1599,8 @@ function refreshPreview(){
   const base=`/api/preview?job=${state.job}&fid=${f.fid}&page=${p.src??state.pi}`;
   const url = state.before
     ? `${base}&angle=0`                          // raw original, no colour
-    : `${base}&angle=${p.angle}&rot=${p.rotate||0}${colorQuery(p.color)}${wmQuery(p)}${removalsQuery(p.removals)}&pv=${state.paletteVersion}`;
+    : `${base}&angle=${p.angle}&rot=${p.rotate||0}${colorQuery(p.color)}${wmQuery(p)}${removalsQuery(p.removals)}`
+      +(p.canvas?'&blank=1':'')+`&pv=${state.paletteVersion}`;
   const img=$('#pageImg');
   img.onload=()=>drawCrop();
   img.src=url;
@@ -1753,7 +1941,8 @@ function ovResolve(o, dest){
 function ovQuery(p){
   const list=(p.overlays||[]).map(o=>ovResolve(o,p)).filter(Boolean);
   if(!list.length) return '';
-  return '&ov='+encodeURIComponent(JSON.stringify(list));
+  return '&ov='+encodeURIComponent(JSON.stringify(list))
+    +(state.clipOv?'&ovclip=1':'');
 }
 function ovImgUrl(o){
   const r=ovResolve(o); if(!r) return '';
@@ -1785,8 +1974,11 @@ function ovHeightFrac(o, dest){
 let ovDragging=false;
 function drawOverlays(){
   const layer=$('#ovLayer'); if(!layer||ovDragging) return;
+  $('#frame').classList.toggle('ov-clip', !!state.clipOv);
+  $('#ovClipChk').checked=!!state.clipOv;
   layer.innerHTML='';
   const p=curPage();
+  $('#ovCanvasChk').checked=!!(p&&p.canvas);
   const list=(p&&p.overlays)||[];
   const badge=$('#ovBadge');
   badge.textContent=list.length;
@@ -1807,7 +1999,7 @@ function drawOverlays(){
     const tools=document.createElement('div'); tools.className='ov-tools';
     const tag=document.createElement('span'); tag.className='ov-tag';
     const sf=state.files[o.sf];
-    tag.textContent=`from page ${o.sp+1}`
+    tag.textContent=(o.self?'this page':`from page ${o.sp+1}`)
       +(state.files.length>1&&sf?` · ${sf.name}`:'');
     const del=document.createElement('button'); del.className='ov-del';
     del.textContent='✕'; del.title='Remove this pulled content';
@@ -1819,13 +2011,100 @@ function drawOverlays(){
     const sh=document.createElement('div'); sh.className='ov-stretch';
     sh.title='Drag to stretch the height';
     const warn=document.createElement('span'); warn.className='ov-warn';
-    warn.textContent='past the margins — the sheet grows to keep it';
+    warn.textContent=state.clipOv
+      ? 'past the margins — this part is cropped off'
+      : 'past the margins — the sheet grows to keep it';
     if(ovOutsideMargins(o,p)) it.classList.add('outside');
+    // crop guides — one per edge, shown only on the selected block in crop mode
+    const cropBars={};
+    ['l','r','t','b'].forEach(s=>{
+      const g=document.createElement('div');
+      g.className='ov-crop c'+s;
+      g.title='Drag to trim this content';
+      cropBars[s]=g;
+    });
+    if(state.ovCropMode&&idx===state.ovSel) it.classList.add('cropping');
     it.appendChild(img); it.appendChild(tools); it.appendChild(hd);
     it.appendChild(sh); it.appendChild(warn);
+    Object.values(cropBars).forEach(g=>it.appendChild(g));
+    // Trim the pulled content by dragging its edges. The remaining content
+    // stays put and at the same size — the block's box tightens around it —
+    // so this reads exactly like cropping a photo. While dragging, the clip is
+    // faked in CSS (the image is held still inside a shrinking, overflow-hidden
+    // box); the real cropped render is only fetched on release, so a drag
+    // doesn't fire a request per pixel.
+    Object.entries(cropBars).forEach(([side,g])=>{
+      g.addEventListener('pointerdown',ev=>{
+        ev.preventDefault(); ev.stopPropagation();
+        selectOverlay(idx);
+        ovDragging=true; it.classList.add('dragging');
+        const fr=$('#pageImg').getBoundingClientRect();
+        const e0=ovEff(o), c0={...e0.crop};
+        const x0=o.x, y0=o.y, w0=o.w, h0=ovHeightFrac(o,p), hSet=o.h;
+        const visW=Math.max(0.02, 1-c0.left-c0.right);   // source still showing
+        const visH=Math.max(0.02, 1-c0.top-c0.bottom);
+        const sx=ev.clientX, sy=ev.clientY;
+        const horiz=(side==='l'||side==='r');
+        // hold the image still at its pre-drag pixel size while the box shrinks
+        img.style.position='absolute'; img.style.left='0'; img.style.top='0';
+        img.style.width=(w0*fr.width)+'px';
+        img.style.height=(h0*fr.height)+'px';
+        it.style.height=(h0*fr.height)+'px';
+        let d=0;
+        const move=e=>{
+          // d = how far this edge moved inward, as a fraction of the page
+          const raw=horiz?(e.clientX-sx)/fr.width:(e.clientY-sy)/fr.height;
+          d=(side==='l'||side==='t')?raw:-raw;
+          // never trim past 10% of the block, never un-crop past the source edge
+          const span=horiz?w0:h0, vis=horiz?visW:visH;
+          const have=c0[{l:'left',r:'right',t:'top',b:'bottom'}[side]];
+          d=Math.min(span*0.9, Math.max(-have/vis*span, d));
+          const px=d*(horiz?fr.width:fr.height);
+          if(horiz){
+            it.style.width=((w0-d)*100)+'%';
+            if(side==='l'){ it.style.left=((x0+d)*100)+'%'; img.style.left=(-px)+'px'; }
+          }else{
+            it.style.height=((h0-d)*fr.height)+'px';
+            if(side==='t'){ it.style.top=((y0+d)*100)+'%'; img.style.top=(-px)+'px'; }
+          }
+        };
+        const up=()=>{
+          document.removeEventListener('pointermove',move);
+          document.removeEventListener('pointerup',up);
+          img.style.position=''; img.style.left=''; img.style.top='';
+          img.style.width=''; img.style.height=''; it.style.height='';
+          ovDragging=false; it.classList.remove('dragging');
+          if(Math.abs(d)>1e-4){
+            // the trimmed edge becomes part of THIS block's own crop, leaving
+            // the source page untouched
+            if(!o.crop) o.crop={...c0};
+            if(horiz){
+              o.crop[side==='l'?'left':'right']=
+                Math.min(0.98, Math.max(0, c0[side==='l'?'left':'right']+d/w0*visW));
+              o.w=w0-d;
+              if(side==='l') o.x=x0+d;
+              // trimming the sides doesn't change how tall the block renders
+            }else{
+              o.crop[side==='t'?'top':'bottom']=
+                Math.min(0.98, Math.max(0, c0[side==='t'?'top':'bottom']+d/h0*visH));
+              if(hSet) o.h=Math.max(0.02,h0-d);   // auto height follows on its own
+              if(side==='t') o.y=y0+d;
+            }
+          }
+          drawOverlays(); syncOvPanel();
+          // a click that didn't move anything shouldn't cost an undo step
+          if(Math.abs(d)>1e-4){
+            drawBorder(); refreshThumb(state.fi,state.pi); commit();
+          }
+        };
+        document.addEventListener('pointermove',move);
+        document.addEventListener('pointerup',up);
+      });
+    });
     // drag to move (a plain click just selects it and opens its controls)
     it.addEventListener('pointerdown',ev=>{
-      if(ev.target===hd||ev.target===sh||state.magicMode||state.before) return;
+      if(ev.target===hd||ev.target===sh||ev.target.classList.contains('ov-crop')
+         ||state.magicMode||state.before) return;
       ev.preventDefault(); ev.stopPropagation();
       selectOverlay(idx);
       ovDragging=true; it.classList.add('dragging'); it.style.cursor='grabbing';
@@ -1918,7 +2197,7 @@ function syncOvList(){
     item.className='rem-item';
     item.style.cursor='pointer';
     item.title='Click to select and open its controls';
-    item.innerHTML=`<span>From page ${o.sp+1}`
+    item.innerHTML=`<span>${o.self?'This page':'From page '+(o.sp+1)}`
       +(state.files.length>1&&f?` · ${escapeHtml(f.name)}`:'')
       +`</span><button class="rem-del-btn" title="Remove pulled content">✕</button>`;
     item.onclick=()=>selectOverlay(idx);
@@ -1929,7 +2208,7 @@ function syncOvList(){
 function removeOverlay(idx){
   const p=curPage(); if(!p||!p.overlays) return;
   p.overlays.splice(idx,1);
-  state.ovSel=-1;
+  state.ovSel=-1; state.ovCropMode=false;
   drawOverlays(); drawBorder();     // sheet shrinks back if it had grown
   refreshThumb(state.fi,state.pi);
   commit();
@@ -1952,6 +2231,9 @@ function ovSelObj(){
 // it too. The draggable guides keep showing the user's own p.crop.
 function effCrop(p){
   const c=p.crop, list=(p&&p.overlays)||[];
+  // Clip mode: the sheet is exactly the crop box, whatever hangs past it is
+  // cut — mirrors the server's ovclip/ovClip branch.
+  if(state.clipOv) return {left:c.left, top:c.top, right:c.right, bottom:c.bottom};
   let l=c.left, t=c.top, r=c.right, b=c.bottom;
   list.forEach(o=>{
     const hf=ovHeightFrac(o,p);
@@ -2007,7 +2289,7 @@ function selectOverlay(idx){
 }
 function deselectOverlay(){
   if(state.ovSel<0) return;
-  state.ovSel=-1;
+  state.ovSel=-1; state.ovCropMode=false;
   $('#ovLayer').querySelectorAll('.ov-item').forEach(el=>el.classList.remove('selected'));
   syncOvPanel();
 }
@@ -2037,12 +2319,26 @@ function syncOvPanel(){
   $('#frame').classList.toggle('ov-editing', !!o);
   if(!o){ sec.style.display='none'; return; }
   sec.style.display='';
-  $('#ovOutWarn').style.display=ovOutsideMargins(o,curPage())?'':'none';
+  const out=ovOutsideMargins(o,curPage());
+  $('#ovOutWarn').style.display=out?'':'none';
+  $('#ovOutWarn').textContent=state.clipOv
+    ? 'Part of this sits outside the crop margins. The sheet keeps its size, so '
+      +'that part is cropped off on export and the frame stays over the page. '
+      +'Fit it in to keep all of it.'
+    : 'Part of this sits outside the crop margins, so the exported sheet grows '
+      +'outward (blank paper) to keep all of it. Inside a border frame that '
+      +'means the page sits a little smaller in the window. Fit it in to keep '
+      +'the sheet at its trimmed size instead.';
+  const cb=$('#ovCropBtn');
+  cb.classList.toggle('magic-active', state.ovCropMode);
+  cb.textContent=state.ovCropMode?'✂ Done cropping':'✂ Crop on the page';
   const setV=(id,v)=>{ const el=$(id); if(el!==document.activeElement) el.value=v; };
   const sf=state.files[o.sf];
-  $('#ovEditInfo').textContent=`From page ${o.sp+1}`
-    +(state.files.length>1&&sf?` · ${sf.name}`:'')
-    +' — untouched settings keep following that page.';
+  $('#ovEditInfo').textContent=(o.self
+      ? 'This page’s own content, floating on the canvas'
+      : `From page ${o.sp+1}`+(state.files.length>1&&sf?` · ${sf.name}`:''))
+    +(o.self?' — move, resize, crop and colour it like any other block.'
+           :' — untouched settings keep following that page.');
   const p=curPage(), e=ovEff(o);
   setV('#ovW',Math.round(o.w*100));
   $('#vOvW').textContent=Math.round(o.w*100)+'%';
@@ -2113,7 +2409,41 @@ function ovEditDone(){
     }));
     on(id,'change',ovEditDone);
   });
-  $('#ovMReset').onclick=()=>{ ovEditLive(o=>{ delete o.crop; }); ovEditDone(); };
+  $('#ovMReset').onclick=()=>{
+    ovEditLive(o=>{ delete o.crop; });
+    state.ovCropMode=false; drawOverlays(); ovEditDone(); };
+  $('#ovCanvasFitBtn').onclick=()=>{
+    const p=curPage(); if(!p){ toast('Load a PDF first'); return; }
+    if(!p.canvas){ toast('Turn Free canvas on first'); return; }
+    if(!state.borders.on){ toast('Turn Borders on — the canvas is shaped to the frame’s window'); return; }
+    if(fitCanvasToFrame(p)){
+      drawCrop(); drawOverlays(); drawBorder();
+      refreshThumb(state.fi,state.pi); commit();
+      toast('Canvas reshaped to the border window — the page adds no margins now');
+    }else toast('The canvas already matches the border window');
+  };
+  $('#ovCanvasChk').onchange=()=>{
+    const want=$('#ovCanvasChk').checked;
+    setFreeCanvas(want);
+    toast(want
+      ? 'Free canvas on — this page’s content is now a block you can move, resize and crop'
+      : 'Free canvas off — this page is the backdrop again');
+  };
+  $('#ovClipChk').onchange=()=>{
+    state.clipOv=$('#ovClipChk').checked;
+    // the sheet size changes under the frame, so everything that measures
+    // against it has to be redrawn
+    drawOverlays(); drawBorder(); syncOvPanel();
+    refreshThumb(state.fi,state.pi); commit();
+    toast(state.clipOv
+      ? 'Pulled content past the margins will be cropped — the sheet keeps its size'
+      : 'The sheet will grow to keep pulled content parked past the margins');
+  };
+  $('#ovCropBtn').onclick=()=>{
+    state.ovCropMode=!state.ovCropMode;
+    drawOverlays(); syncOvPanel();
+    if(state.ovCropMode) toast('Drag the blue edges of the pulled block to trim it');
+  };
   // rotation & tilt → own angle/rotate override
   $('#ovRot90').onclick=()=>{
     ovEditLive((o,e)=>{ o.rotate=((e.rotate||0)+90)%360; });
@@ -2168,6 +2498,66 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape'&&state.mergePick) setMergePick(false);
   else if(e.key==='Escape'&&state.ovSel>=0) deselectOverlay();
 });
+// Free canvas: the page stops being the backdrop that everything else floats
+// on. Its own content is lifted into a block like any pulled one, and the sheet
+// behind them becomes blank paper bounded by the crop margins (the border
+// frame's window). Two, three, ten pages then sit on one canvas as equals —
+// each moved, resized, cropped and colour-tuned on its own.
+function makeSelfBlock(p, fi, pi){
+  const c=p.crop;
+  return {sf:fi, sp:pi, self:true,
+    x:c.left, y:c.top, w:Math.max(0.04, 1-c.left-c.right),
+    // copied, not inherited: the page's own crop guides now size the CANVAS,
+    // so the block must stop following them
+    crop:{...c}, angle:p.angle, rotate:p.rotate||0, color:{...p.color}};
+}
+// The free canvas IS the border frame's window: the sheet is reshaped to the
+// slot's exact aspect (growing outward with blank paper, never cropping), so
+// contain-fitting it into the slot fills the window edge to edge. The page then
+// contributes NO margins of its own — the only margins left are the frame's —
+// and the blocks float anywhere inside that window, clipped at its edges.
+function fitCanvasToFrame(p){
+  const meta=borderMeta();
+  if(!p||!p.canvas||!state.borders.on||!meta||!meta.template_count) return false;
+  const slot=meta.config&&meta.config.slot; if(!slot||!slot.w||!slot.h) return false;
+  const dd=pageDims(p), c={...p.crop};
+  const boxW=(1-c.left-c.right)*dd.w, boxH=(1-c.top-c.bottom)*dd.h;
+  if(boxW<=0||boxH<=0) return false;
+  const target=slot.w/slot.h, cur=boxW/boxH;
+  if(Math.abs(cur-target)<0.002) return false;
+  if(cur>target){                       // too wide → add paper above & below
+    const extra=(boxW/target-boxH)/dd.h/2;
+    c.top-=extra; c.bottom-=extra;
+  }else{                                // too tall → add paper left & right
+    const extra=(boxH*target-boxW)/dd.w/2;
+    c.left-=extra; c.right-=extra;
+  }
+  p.crop=c;
+  return true;
+}
+function setFreeCanvas(on){
+  const p=curPage(); if(!p) return;
+  if(!!p.canvas===!!on) return;
+  if(!p.overlays) p.overlays=[];
+  if(on){
+    p.canvas=true;
+    // index 0 = pasted first = underneath anything pulled in later
+    if(!p.overlays.some(o=>o.self))
+      p.overlays.unshift(makeSelfBlock(p, state.fi, state.pi));
+    if(state.ovSel>=0) state.ovSel++;
+    fitCanvasToFrame(p);
+  }else{
+    p.canvas=false;
+    const i=p.overlays.findIndex(o=>o.self);
+    if(i>=0){
+      p.overlays.splice(i,1);
+      if(state.ovSel===i) state.ovSel=-1;
+      else if(state.ovSel>i) state.ovSel--;
+    }
+  }
+  refreshPreview(); drawOverlays(); drawBorder();
+  refreshThumb(state.fi,state.pi); commit();
+}
 function pullPageContent(sfi,spi){
   setMergePick(false);
   const dest=curPage(); if(!dest) return;
@@ -2185,6 +2575,13 @@ function pullPageContent(sfi,spi){
   (dest.overlays||[]).forEach(o=>{ y=Math.max(y, o.y+ovHeightFrac(o,dest)+0.005); });
   const o={sf:sfi, sp:spi, x:Math.min(0.9,dc.left), y:Math.min(1.05,y), w};
   if(!dest.overlays) dest.overlays=[];
+  // The moment a second page lands here, neither page is "the background":
+  // both float freely on the blank canvas.
+  if(!dest.canvas){
+    dest.canvas=true;
+    dest.overlays.unshift(makeSelfBlock(dest, state.fi, state.pi));
+    fitCanvasToFrame(dest);
+  }
   dest.overlays.push(o);
   // with a border frame on, land the pull inside the margins: it would export
   // either way (the sheet grows around it), but fitting keeps the sheet — and
@@ -3438,14 +3835,46 @@ function drawBorderHeader(h, sx, sy, ox, oy){
                   (h.name_min_font_size||16)*sx);
   }
 }
+// Boards are multi-select: tick MP and RJ and the export comes back as a zip
+// holding the same notes twice, each behind its own cover. state.borders.board
+// stays in sync as the first ticked board, so drafts, the history name and the
+// live preview keep working unchanged.
+function syncPrimaryBoard(){
+  state.borders.board=(state.borders.boards||[])[0]||'';
+}
 function fillBorderBoards(){
-  const meta=borderMeta(), bSel=$('#bdBoard');
-  bSel.innerHTML=''; bSel.add(new Option('— no cover —',''));
-  (meta?meta.boards:[]).forEach(b=>bSel.add(new Option(b,b)));
-  bSel.value=(meta&&meta.boards.includes(state.borders.board))?state.borders.board:'';
-  state.borders.board=bSel.value;
+  const meta=borderMeta(), box=$('#bdBoards');
+  const avail=(meta?meta.boards:[])||[];
+  // drop anything the newly-picked class doesn't have covers for
+  state.borders.boards=(state.borders.boards||[]).filter(b=>avail.includes(b));
+  syncPrimaryBoard();
+  box.innerHTML='';
+  if(!avail.length){
+    box.innerHTML='<span class="muted">no cover pages for this class</span>';
+  }else{
+    avail.forEach(b=>{
+      const c=document.createElement('button');
+      c.type='button'; c.className='chip'; c.dataset.board=b; c.textContent=b;
+      c.title=`Include a ${b} cover`;
+      box.appendChild(c);
+    });
+  }
+  syncBoardChips();
   fillBorderStreams();
 }
+function syncBoardChips(){
+  const on=state.borders.boards||[];
+  document.querySelectorAll('#bdBoards .chip').forEach(c=>
+    c.classList.toggle('active', on.includes(c.dataset.board)));
+}
+$('#bdBoards').addEventListener('click',e=>{
+  const c=e.target.closest('.chip'); if(!c) return;
+  const b=c.dataset.board, on=state.borders.boards||(state.borders.boards=[]);
+  const i=on.indexOf(b);
+  if(i>=0) on.splice(i,1); else on.push(b);
+  syncPrimaryBoard();
+  syncBoardChips(); fillBorderStreams(); syncBordersUI(); commit();
+});
 function fillBorderStreams(){
   const meta=borderMeta(), sSel=$('#bdStream');
   sSel.innerHTML=''; sSel.add(new Option('— stream —',''));
@@ -3483,15 +3912,20 @@ function syncBordersUI(){
     info.textContent=`No ${b.cls} frames yet — drop template PNGs into borders/${b.cls}/templates/ (covers go in borders/${b.cls}/front_pages/).`;
     return;
   }
+  const picked=b.boards||[];
   const streams=(b.board?meta.streams_by_board[b.board]:null)||[];
-  const coverReady=b.board&&(!streams.length||b.stream);
+  const coverReady=picked.length&&(!streams.length||b.stream);
   const anyStreams=Object.values(meta.streams_by_board).some(a=>a.length);
+  const suffix=b.stream?' · '+b.stream:'';
   info.textContent=`${meta.template_count} frame designs cycle page by page.`
     +(coverReady
-      ? ` Cover “${b.board}${b.stream?' · '+b.stream:''}” is added as page 1 on export.`
+      ? (picked.length===1
+          ? ` Cover “${picked[0]}${suffix}” is added as page 1 on export.`
+          : ` Export returns a zip: ${picked.length} copies of these notes, one`
+            +` per cover (${picked.map(x=>x+suffix).join(', ')}).`)
       : (meta.boards.length
-          ? (b.board?' Pick a stream to add a cover page on export.'
-                    :` Pick a board${anyStreams?' & stream':''} to add a cover page on export.`)
+          ? (picked.length?' Pick a stream to add a cover page on export.'
+                    :` Pick one or more boards${anyStreams?' & a stream':''} to add a cover page on export.`)
           : ''));
 }
 $('#bdToggle').onclick=()=>{
@@ -3505,10 +3939,6 @@ $('#bdToggle').onclick=()=>{
 $('#bdClass').onchange=e=>{
   state.borders.cls=e.target.value;
   fillBorderBoards(); syncBordersUI(); drawBorder(); commit();
-};
-$('#bdBoard').onchange=e=>{
-  state.borders.board=e.target.value; state.borders.stream='';
-  fillBorderStreams(); syncBordersUI(); commit();
 };
 $('#bdStream').onchange=e=>{
   state.borders.stream=e.target.value; syncBordersUI(); commit();
@@ -3697,13 +4127,14 @@ function draftState(){
   return {
     files: state.files.map(f=>({name:f.name,
       pages: f.pages.map(p=>({src:p.src, angle:p.angle, rotate:p.rotate||0, crop:{...p.crop},
-        removals:[...(p.removals||[])],
+        removals:[...(p.removals||[])], canvas:!!p.canvas,
         overlays:(p.overlays||[]).map(copyOv),
         shapes:copyShapes(p.shapes), color:{...p.color},
         bfit:{...(p.bfit||DEF_BFIT)}, deleted:!!p.deleted,
         wmo:p.wmo?{...p.wmo}:null}))})),
     watermark:{...state.watermark},
     borders:{...state.borders},
+    clipOv:!!state.clipOv,
     palette: state.palette,
     dpi: parseInt($('#dpi').value),
   };
@@ -3836,6 +4267,7 @@ function applyDraftState(s){
       p.angle=sp.angle; p.rotate=sp.rotate||0;
       p.crop={...sp.crop}; p.color={...DEF_COLOR, ...sp.color};
       p.removals=sp.removals?[...sp.removals]:[];
+      p.canvas=!!sp.canvas;
       p.overlays=(sp.overlays||[]).map(copyOv);
       p.shapes=copyShapes(sp.shapes);
       p.bfit={...DEF_BFIT, ...(sp.bfit||{})};
@@ -3852,8 +4284,10 @@ function applyDraftState(s){
   if(s.borders){
     const sb=s.borders;
     state.borders={on:!!sb.on, cls:sb.cls||state.borders.cls, board:sb.board||'',
+                   boards:[...(sb.boards||(sb.board?[sb.board]:[]))],
                    stream:sb.stream||'', number:sb.number||'', name:sb.name||''};
   }
+  state.clipOv = s.clipOv!==false;         // drafts saved before this default on
   state.palette=s.palette||null; state.paletteVersion++;
   if(s.palette) showPalette(s.palette);
   else{ $('#paletteBox').style.display='none';
@@ -3888,7 +4322,7 @@ $('#exportBtn').onclick=async()=>{
   const settings={};
   state.files.forEach(f=>{
     settings[f.fid]={pages:f.pages.map((p,pi)=>({src:p.src??pi,angle:p.angle,rotate:p.rotate||0,
-      crop:p.crop,removals:p.removals,
+      crop:p.crop,removals:p.removals,blank:!!p.canvas,
       overlays:(p.overlays||[]).map(o=>ovResolve(o,p)).filter(Boolean),
       shapes:packShapes(p.shapes),
       color:p.color,bfit:p.bfit||DEF_BFIT,deleted:!!p.deleted,
@@ -3899,8 +4333,9 @@ $('#exportBtn').onclick=async()=>{
     watermark:w.on,
     wmOpacity:w.opacity, wmScale:w.scale, wmRotate:w.rotate,
     wmDx:w.dx, wmDy:w.dy, wmCenterMargins:w.centerMargins,
-    borders:{on:bd.on, class:bd.cls, board:bd.board, stream:bd.stream,
-             number:bd.number, name:bd.name}};
+    ovClip:!!state.clipOv,
+    borders:{on:bd.on, class:bd.cls, board:bd.board, boards:[...(bd.boards||[])],
+             stream:bd.stream, number:bd.number, name:bd.name}};
   const nDel=deletedCount();
   // Snapshot the session into History the moment Export is clicked — the
   // draft (PDFs + every edit) is kept even if the render fails midway.
