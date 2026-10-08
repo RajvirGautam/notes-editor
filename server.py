@@ -31,6 +31,7 @@ from werkzeug.exceptions import HTTPException
 import imaging
 import borders
 import spellfix
+import patchwork
 
 app = Flask(__name__, static_folder="static", static_url_path="")
 
@@ -46,6 +47,10 @@ def _patch_image(pid: str):
 
 
 imaging.set_patch_resolver(_patch_image)
+
+# Patchwork blocks resolve straight off disk (work/patchwork/<id>.png), so they
+# survive a restart and cost nothing to hold in memory.
+imaging.set_patchwork_resolver(patchwork.get)
 
 
 def _register_fix(fx: dict) -> None:
@@ -659,6 +664,61 @@ def spellcheck():
                     findings.extend(res)
     findings.sort(key=lambda m: (m["fid"], m["pi"], m["y"]))
     return jsonify({"findings": findings, "errors": errors})
+
+
+# ---------------------------------------------------------------------------
+# Patchwork — typed text becomes a styled image block on the page
+# ---------------------------------------------------------------------------
+@app.route("/api/patchwork/options")
+def patchwork_options():
+    """Banner variants + whether the renderer can run at all."""
+    return jsonify({
+        "available": patchwork.available(),
+        "labels": [{"key": k, "title": v["title"]}
+                   for k, v in patchwork.LABELS.items()],
+        "default": "en",
+    })
+
+
+@app.route("/api/patchwork/render", methods=["POST"])
+def patchwork_render():
+    """
+    Rasterise the panel's text into a patch PNG.
+
+    Returns {id, w, h}; the client turns that into an overlay block whose
+    natural aspect ratio is h/w, then moves and stretches it like any other.
+    """
+    data = request.get_json(silent=True) or {}
+    try:
+        res = patchwork.render(
+            str(data.get("text", "") or ""),
+            label=str(data.get("label", "en") or "en"),
+            width=int(data.get("width", patchwork.DEFAULT_WIDTH) or
+                      patchwork.DEFAULT_WIDTH),
+            scale=int(data.get("scale", patchwork.DEFAULT_SCALE) or
+                      patchwork.DEFAULT_SCALE),
+            transparent=bool(data.get("transparent")),
+            margin_rule=bool(data.get("margin_rule", True)),
+            banner_width_pct=int(data.get("banner_width", 52) or 52),
+            banner_align=str(data.get("banner_align", "left") or "left"),
+        )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        # Surface the real reason (missing chromium, bad CSS, KaTeX blow-up)
+        # instead of a blank "render failed".
+        app.logger.exception("patchwork render failed")
+        return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
+    return jsonify(res)
+
+
+@app.route("/api/patchwork/<pid>.png")
+def patchwork_png(pid: str):
+    """The rendered patch itself — what the editor shows inside the block."""
+    p = patchwork.png_path(pid)
+    if p is None:
+        abort(404)
+    return send_file(str(p), mimetype="image/png")
 
 
 @app.route("/api/detect_gaps", methods=["POST", "GET"])

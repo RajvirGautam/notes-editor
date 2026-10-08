@@ -179,6 +179,7 @@
   .sec h3::before{font-size:15px;line-height:1}
   .sec[data-sec=remover] h3::before{content:'🪄'}
   .sec[data-sec=merge] h3::before{content:'🗂️'}
+  .sec[data-sec=patchwork] h3::before{content:'✨'}
   .sec[data-sec=ovedit] h3::before{content:'🎛️'}
   .sec[data-sec=shapes] h3::before{content:'🔷'}
   .sec[data-sec=rotate] h3::before{content:'🔄'}
@@ -556,6 +557,38 @@
       </div>
     </div>
 
+    <div class="sec" data-sec="patchwork">
+      <h3>Patchwork</h3>
+      <div class="secbody">
+        <div class="muted" style="margin-bottom:8px">Type the content and it is
+          rendered in the Arivihan style under the banner. It lands on the page
+          as a block you drag, resize and stretch like pulled content.</div>
+        <textarea id="pwText" rows="7" spellcheck="false"
+          placeholder="$a = 1cm = 10^{-2}m,$&#10;$V = a^3 = 10^{-6} m^3$&#10;&#10;ANSWER: $10^{-6} m^3$"
+          style="width:100%;box-sizing:border-box;resize:vertical;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:#161a20;color:#e8eaed;border:1px solid #2a2f3a;border-radius:6px;padding:8px"></textarea>
+        <div class="row" style="margin:8px 0 6px"><label>Banner</label>
+          <select id="pwLabel"></select></div>
+        <div class="crow"><span>Width on page</span><span id="vPwW" class="unit">55%</span>
+          <input type="range" id="pwW" min="10" max="120" step="1" value="55"/></div>
+        <label class="row" style="margin:6px 0;gap:8px">
+          <input type="checkbox" id="pwRule" checked
+            style="accent-color:var(--acc);width:auto;flex:0 0 auto"/>
+          <span class="muted" style="flex:1;width:auto">Red margin rule down the left</span></label>
+        <label class="row" style="margin:0 0 8px;gap:8px">
+          <input type="checkbox" id="pwTransparent"
+            style="accent-color:var(--acc);width:auto;flex:0 0 auto"/>
+          <span class="muted" style="flex:1;width:auto">Transparent background
+            (let the paper show through)</span></label>
+        <button id="pwAddBtn" style="width:100%">✨ Make image &amp; place on page</button>
+        <div id="pwMsg" class="muted" style="margin-top:8px;display:none"></div>
+        <div class="muted" style="margin-top:10px;font-size:11px;line-height:1.6">
+          <b>Syntax</b> — <code>$x^2$</code> math · <code>$$x^2$$</code> centred
+          math · <code>**bold**</code> · <code># Heading</code> ·
+          <code>- bullet</code> · <code>| a | b |</code> table ·
+          <code>ANSWER:</code> starts the teal answer box.</div>
+      </div>
+    </div>
+
     <div class="sec" data-sec="ovedit" id="ovEditSec" style="display:none">
       <h3>Pulled content <span class="badge" style="display:inline-block">selected</span></h3>
       <div class="secbody">
@@ -581,6 +614,10 @@
         <div class="crow"><span>Vertical</span><span id="vOvY" class="unit">0%</span>
           <input type="range" id="ovY" min="-20" max="120" step="1"/></div>
 
+        <!-- Everything below follows a SOURCE PAGE, so it is meaningless for a
+             patchwork block (generated artwork with no page behind it) and is
+             hidden when one is selected. -->
+        <div id="ovSrcOnly">
         <div class="muted" style="margin:10px 0 6px">Trim margins <span class="unit">(% of the source page)</span></div>
         <div class="row"><label>Top</label>
           <input type="number" id="ovMT" step="0.5" min="0" max="49"/><span class="unit">%</span></div>
@@ -627,6 +664,7 @@
         <div class="btnrow" style="margin-top:6px">
           <button id="ovCReset" style="flex:1">Follow source colour</button>
         </div>
+        </div><!-- /ovSrcOnly -->
 
         <div class="btnrow" style="margin-top:12px">
           <button id="ovResetAll" style="flex:1">Reset all overrides</button>
@@ -1966,6 +2004,12 @@ function copyOv(o){
 // Effective render params for an overlay: its own override when set, else the
 // live value from its source page.
 function ovEff(o){
+  // A patchwork block has no source page: it is finished artwork, composited
+  // as-is. Neutral values keep the shared panel code working; the controls
+  // that would edit them are hidden for it.
+  if(o.kind==='patchwork')
+    return {angle:0, rotate:0, crop:{left:0,top:0,right:0,bottom:0},
+      color:{mode:'none',deyellow:0,whiten:0,brightness:1,contrast:1,saturation:1}};
   const sf=state.files[o.sf], sp=sf&&sf.pages[o.sp]; if(!sp) return null;
   return {angle:o.angle??sp.angle, rotate:o.rotate??(sp.rotate||0),
     crop:{...(o.crop||sp.crop)}, color:{...(o.color||sp.color)}};
@@ -1976,6 +2020,13 @@ function ovEff(o){
 // content parked past the margins. Callers that only want the source image
 // (ovImgUrl) can leave it out; height plays no part in that render.
 function ovResolve(o, dest){
+  if(o.kind==='patchwork'){
+    if(!o.pid) return null;
+    const r={kind:'patchwork', pid:o.pid, x:o.x, y:o.y, w:o.w};
+    const h=o.h||(dest?ovHeightFrac(o,dest):0);
+    if(h) r.h=+h.toFixed(4);
+    return r;
+  }
   const sf=state.files[o.sf]; if(!sf) return null;
   const sp=sf.pages[o.sp]; if(!sp) return null;
   const e=ovEff(o);
@@ -1996,6 +2047,8 @@ function ovQuery(p){
   return '&ov='+encodeURIComponent(JSON.stringify(list));
 }
 function ovImgUrl(o){
+  // The patch PNG is already the finished picture — no page render involved.
+  if(o.kind==='patchwork') return o.pid?`/api/patchwork/${o.pid}.png`:'';
   const r=ovResolve(o); if(!r) return '';
   const c=r.crop;
   return `/api/preview?job=${state.job}&fid=${r.fid}&page=${r.page}`
@@ -2015,6 +2068,12 @@ function pageDims(p){
 // override when set, otherwise derived from the effective source geometry.
 function ovHeightFrac(o, dest){
   if(o.h) return o.h;
+  if(o.kind==='patchwork'){
+    // Natural aspect comes from the rendered PNG's own pixel size.
+    if(!dest||!o.pw||!o.ph) return 0;
+    const dd=pageDims(dest);
+    return o.w*(dd.w/dd.h)*(o.ph/o.pw);
+  }
   const sf=state.files[o.sf], sp=sf&&sf.pages[o.sp]; if(!sp) return 0;
   const e=ovEff(o);
   const swap=Math.round((e.rotate||0)/90)%2!==0;
@@ -2048,10 +2107,12 @@ function drawOverlays(){
     const tools=document.createElement('div'); tools.className='ov-tools';
     const tag=document.createElement('span'); tag.className='ov-tag';
     const sf=state.files[o.sf];
-    tag.textContent=`from page ${o.sp+1}`
-      +(state.files.length>1&&sf?` · ${sf.name}`:'');
+    tag.textContent = o.kind==='patchwork' ? 'patchwork'
+      : `from page ${o.sp+1}`+(state.files.length>1&&sf?` · ${sf.name}`:'');
     const del=document.createElement('button'); del.className='ov-del';
-    del.textContent='✕'; del.title='Remove this pulled content';
+    del.textContent='✕';
+    del.title = o.kind==='patchwork' ? 'Remove this patchwork block'
+                                     : 'Remove this pulled content';
     del.addEventListener('pointerdown',ev=>ev.stopPropagation());
     del.onclick=ev=>{ ev.stopPropagation(); removeOverlay(idx); };
     tools.appendChild(tag); tools.appendChild(del);
@@ -2159,9 +2220,11 @@ function syncOvList(){
     item.className='rem-item';
     item.style.cursor='pointer';
     item.title='Click to select and open its controls';
-    item.innerHTML=`<span>From page ${o.sp+1}`
-      +(state.files.length>1&&f?` · ${escapeHtml(f.name)}`:'')
-      +`</span><button class="rem-del-btn" title="Remove pulled content">✕</button>`;
+    const what = o.kind==='patchwork'
+      ? `✨ Patchwork${o.summary?' · '+escapeHtml(o.summary):''}`
+      : `From page ${o.sp+1}`+(state.files.length>1&&f?` · ${escapeHtml(f.name)}`:'');
+    item.innerHTML=`<span>${what}`
+      +`</span><button class="rem-del-btn" title="Remove this block">✕</button>`;
     item.onclick=()=>selectOverlay(idx);
     item.querySelector('.rem-del-btn').onclick=ev=>{ ev.stopPropagation(); removeOverlay(idx); };
     list.appendChild(item);
@@ -2281,9 +2344,16 @@ function syncOvPanel(){
   $('#ovOutWarn').style.display=ovOutsideMargins(o,curPage())?'':'none';
   const setV=(id,v)=>{ const el=$(id); if(el!==document.activeElement) el.value=v; };
   const sf=state.files[o.sf];
-  $('#ovEditInfo').textContent=`From page ${o.sp+1}`
-    +(state.files.length>1&&sf?` · ${sf.name}`:'')
-    +' — untouched settings keep following that page.';
+  const isPw = o.kind==='patchwork';
+  sec.querySelector('h3').firstChild.nodeValue =
+    isPw ? 'Patchwork block ' : 'Pulled content ';
+  $('#ovSrcOnly').style.display = isPw ? 'none' : '';
+  $('#ovEditInfo').textContent = isPw
+    ? 'Generated artwork — drag it, resize with the corner handle, stretch with '
+      + 'the bottom one. Re-type it in the Patchwork panel to change the text.'
+    : `From page ${o.sp+1}`
+      +(state.files.length>1&&sf?` · ${sf.name}`:'')
+      +' — untouched settings keep following that page.';
   const p=curPage(), e=ovEff(o);
   setV('#ovW',Math.round(o.w*100));
   $('#vOvW').textContent=Math.round(o.w*100)+'%';
@@ -2448,6 +2518,73 @@ function pullPageContent(sfi,spi){
   commit();
   toast(msg,4500);
 }
+
+// ---- patchwork (typed text becomes a styled image block) ------------------
+// The server rasterises the text with the Arivihan template and hands back an
+// id plus the PNG's pixel size. That becomes an overlay of kind 'patchwork':
+// it has no source page, so it carries its own pid and natural dimensions and
+// otherwise behaves exactly like pulled content — same drag, same corner
+// resize, same bottom stretch, same export path.
+(function initPatchwork(){
+  const sel=$('#pwLabel'), btn=$('#pwAddBtn'), msg=$('#pwMsg');
+  if(!sel||!btn) return;
+  const say=(t,bad)=>{
+    msg.textContent=t; msg.style.display=t?'':'none';
+    msg.style.color=bad?'#ff8a80':'';
+  };
+  fetch('/api/patchwork/options').then(r=>r.json()).then(d=>{
+    sel.innerHTML=(d.labels||[]).map(l=>
+      `<option value="${escapeHtml(l.key)}">${escapeHtml(l.title)}</option>`).join('');
+    sel.value=d.default||'en';
+    if(!d.available){
+      btn.disabled=true;
+      say('Chromium is missing — run ./.venv/bin/playwright install chromium',true);
+    }
+  }).catch(()=>{});
+
+  const wSlider=$('#pwW');
+  wSlider.addEventListener('input',()=>{
+    $('#vPwW').textContent=wSlider.value+'%'; });
+
+  btn.onclick=async()=>{
+    const text=$('#pwText').value;
+    if(!text.trim()){ say('Type something first',true); return; }
+    const dest=curPage();
+    if(!dest){ toast('Load a PDF first'); return; }
+    btn.disabled=true; say('Rendering…');
+    try{
+      const r=await fetch('/api/patchwork/render',{
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          text, label:sel.value,
+          transparent:$('#pwTransparent').checked,
+          margin_rule:$('#pwRule').checked,
+        })});
+      const d=await r.json();
+      if(!r.ok||d.error) throw new Error(d.error||('HTTP '+r.status));
+
+      const dc=dest.crop;
+      const w=Math.min(1.5,Math.max(0.04,(+wSlider.value||55)/100));
+      // stack under whatever is already on the page, like a pull does
+      let y=dc.top+0.02;
+      (dest.overlays||[]).forEach(o=>{ y=Math.max(y,o.y+ovHeightFrac(o,dest)+0.005); });
+      const o={kind:'patchwork', pid:d.id, pw:d.w, ph:d.h,
+        x:Math.min(0.9,dc.left+0.02), y:Math.min(1.05,y), w,
+        summary:text.trim().split('\n')[0].slice(0,28)};
+      if(!dest.overlays) dest.overlays=[];
+      dest.overlays.push(o);
+      if(state.borders.on) ovFitIntoMargins(o,dest);
+      state.ovSel=dest.overlays.length-1;
+      drawOverlays(); selectOverlay(state.ovSel); drawBorder();
+      refreshThumb(state.fi,state.pi); commit();
+      say('');
+      toast('Patchwork placed — drag it, resize from the corner, stretch from '
+            +'the bottom handle',4500);
+    }catch(e){
+      say(String(e.message||e),true);
+    }finally{ btn.disabled=false; }
+  };
+})();
 
 // ---- shape filler (free polygons that hide content) -----------------------
 // Each shape is {pts:[[x,y],...], color:'#rrggbb'} with points as fractions of

@@ -1051,6 +1051,16 @@ def expanded_crop(crop: dict | None, overlays: list[dict] | None) -> dict | None
     return c
 
 
+# Patchwork blocks are overlays whose pixels come from the patchwork renderer
+# rather than from a source page, so they resolve by id like spelling fixes do.
+_PATCHWORK_RESOLVER = None   # fn(pid) -> RGBA Image | None, set by the server
+
+
+def set_patchwork_resolver(fn) -> None:
+    global _PATCHWORK_RESOLVER
+    _PATCHWORK_RESOLVER = fn
+
+
 def paste_overlays(img: Image.Image, overlays: list[dict], crop: dict | None,
                    palette: dict | None, src_render) -> Image.Image:
     """
@@ -1079,16 +1089,28 @@ def paste_overlays(img: Image.Image, overlays: list[dict], crop: dict | None,
     full_w, full_h = W / kw, H / kh          # uncropped-equivalent sheet size
     for ov in overlays:
         try:
-            base = src_render(ov)
-            if base is None:
-                continue
-            src = process_page(base, float(ov.get("angle", 0) or 0),
-                               ov.get("crop") or {}, ov.get("color"),
-                               palette, ov.get("removals"),
-                               float(ov.get("rotate", 0) or 0),
-                               ov.get("persp"), ov.get("fixes"))
-            if ov.get("shapes"):
-                src = draw_shapes(src, ov["shapes"], ov.get("crop"))
+            alpha = False
+            if ov.get("kind") == "patchwork":
+                # A patchwork block is generated artwork, not scanned paper:
+                # it carries no page transform, and it must keep its own true
+                # colours rather than being graded with the scan. Its alpha is
+                # the paste mask, so rounded banner corners stay clean.
+                src = _PATCHWORK_RESOLVER(str(ov.get("pid", ""))) \
+                    if _PATCHWORK_RESOLVER else None
+                if src is None:
+                    continue
+                alpha = True
+            else:
+                base = src_render(ov)
+                if base is None:
+                    continue
+                src = process_page(base, float(ov.get("angle", 0) or 0),
+                                   ov.get("crop") or {}, ov.get("color"),
+                                   palette, ov.get("removals"),
+                                   float(ov.get("rotate", 0) or 0),
+                                   ov.get("persp"), ov.get("fixes"))
+                if ov.get("shapes"):
+                    src = draw_shapes(src, ov["shapes"], ov.get("crop"))
             ow = max(1, int(round(float(ov.get("w", 0.5)) * full_w)))
             # Optional explicit height fraction ("stretch") — falls back to the
             # source's natural aspect when absent.
@@ -1098,7 +1120,12 @@ def paste_overlays(img: Image.Image, overlays: list[dict], crop: dict | None,
             src = src.resize((ow, oh), Image.LANCZOS)
             x = int(round((float(ov.get("x", 0)) - cl) * full_w))
             y = int(round((float(ov.get("y", 0)) - ct) * full_h))
-            img.paste(src, (x, y))           # paste clips at the page edges
+            if alpha:
+                # Its own alpha is the mask, so the banner's rounded corners
+                # and any transparent background let the page show through.
+                img.paste(src, (x, y), src)
+            else:
+                img.paste(src, (x, y))       # paste clips at the page edges
         except Exception:
             continue
     return img

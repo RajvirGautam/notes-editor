@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Subject_Year_Solved | Arivihan</title>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Unified stylesheet: copy template.css alongside this file, or point to the shared /Solved.css -->
+    <link rel="stylesheet" href="template.css">
+</head>
+
+<!-- Add class="medium-hi" on <body> for Hindi-medium papers (switches MCQ mark label to "अंक") -->
+<body>
+<div class="page">
+
+    <!-- ===================== HEADER ===================== -->
+    <div class="header">
+        <div class="main-title">
+            <span class="title-solved">SOLVED</span>
+            <span class="title-pyp">PREVIOUS YEAR PAPER</span>
+        </div>
+        <div class="subtitle">Board pattern ke anusar, jinse padhkar 90% marks sambhav hain</div>
+        <div class="subject-year-wrapper"><span class="subject-year">Subject — Year (Sitting)</span></div>
+        <hr class="header-line">
+    </div>
+
+    <div class="content-area">
+
+        <!-- ===================== SECTION A : MCQ ===================== -->
+        <div class="question-type-text">Section A : Objective Type Questions (MCQ)</div>
+        <div class="obj-instruction">Instructions: Of the N questions, answer any M. The first M are given below with the correct option. (1 &times; M)</div>
+
+        <!-- MCQ Q1 — duplicate this whole .mcq-block for each MCQ -->
+        <div class="mcq-block">
+            <div class="mcq-qline"><span class="mcq-qno">1</span> <span class="mcq-qtext">Question text goes here?</span></div>
+            <div class="mcq-opts">
+                <div class="mcq-opt"><span class="mcq-label">(A)</span> Option A</div>
+                <div class="mcq-opt correct"><span class="mcq-label">(B)</span> Option B<span class="mcq-tick">✓</span></div>
+                <div class="mcq-opt"><span class="mcq-label">(C)</span> Option C</div>
+                <div class="mcq-opt"><span class="mcq-label">(D)</span> Option D</div>
+            </div>
+            <!-- optional: 1-2 line reasoning; delete if not needed -->
+            <div class="mcq-explain"><p>Brief reason why (B) is correct.</p></div>
+        </div>
+
+        <!-- MCQ with a long option: add "wide" to .mcq-opts to stack single-column -->
+        <div class="mcq-block">
+            <div class="mcq-qline"><span class="mcq-qno">2</span> <span class="mcq-qtext">Question with longer options?</span></div>
+            <div class="mcq-opts wide">
+                <div class="mcq-opt correct"><span class="mcq-label">(A)</span> A longer option that needs its own line<span class="mcq-tick">✓</span></div>
+                <div class="mcq-opt"><span class="mcq-label">(B)</span> Another longer option</div>
+                <div class="mcq-opt"><span class="mcq-label">(C)</span> Another longer option</div>
+                <div class="mcq-opt"><span class="mcq-label">(D)</span> Another longer option</div>
+            </div>
+        </div>
+
+        <!-- ===================== SECTION B : SHORT ANSWER ===================== -->
+        <div class="question-type-text">Section B : Short Answer Type Questions</div>
+        <div class="obj-instruction">Instructions: QN-QM are short answer type. Answer any K. Each carries X marks. (X &times; K)</div>
+
+        <!-- Short-answer Q — duplicate this whole .sub-question-block for each question -->
+        <div class="sub-question-block">
+            <div class="sub-q-row">
+                <div class="sub-q-number">
+                    <div class="q-prefix">Q</div>
+                    <div class="q-num">1</div>
+                    <div class="q-marks">2 marks</div>
+                </div>
+                <div class="question-content">
+                    <div class="question-text">Question text goes here?</div>
+                </div>
+            </div>
+            <div class="answer-row">
+                <div class="ans-label-box">Ans</div>
+                <div class="answer-text">
+                    <p>Answer paragraph(s) go here.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===================== SECTION C : LONG ANSWER ===================== -->
+        <div class="question-type-text">Section C : Long Answer Type Questions</div>
+        <div class="obj-instruction">Instructions: QN-QM are long answer type. Answer any K. Each carries X marks. (X &times; K)</div>
+
+        <!-- Long-answer Q with a diagram and a list in the answer -->
+        <div class="sub-question-block">
+            <div class="sub-q-row">
+                <div class="sub-q-number">
+                    <div class="q-prefix">Q</div>
+                    <div class="q-num">1</div>
+                    <div class="q-marks">5 marks</div>
+                </div>
+                <div class="question-content">
+                    <div class="question-text">Long-answer question text goes here?</div>
+                </div>
+            </div>
+            <div class="answer-row">
+                <div class="ans-label-box">Ans</div>
+                <div class="answer-text">
+                    <p>Opening explanation paragraph.</p>
+                    <ul>
+                        <li>Point one.</li>
+                        <li>Point two.</li>
+                    </ul>
+                    <!-- Diagram: before an image is added, the dashed placeholder + hint show automatically -->
+                    <div class="diagram-slot">
+                        <div class="diagram-slot-label">Diagram: label here</div>
+                        <div class="diagram-slot-hint">insert image here</div>
+                    </div>
+                    <!-- Once an image is placed, styling switches automatically (border/hint hide) -->
+                    <!--
+                    <div class="diagram-slot">
+                        <img class="diagram-img" src="q1.png" alt="Description of diagram">
+                        <div class="diagram-caption">Fig.: caption text</div>
+                    </div>
+                    -->
+                    <p>Closing paragraph.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chemistry equation block -->
+        <div class="sub-question-block">
+            <div class="sub-q-row">
+                <div class="sub-q-number">
+                    <div class="q-prefix">Q</div>
+                    <div class="q-num">2</div>
+                    <div class="q-marks">5 marks</div>
+                </div>
+                <div class="question-content">
+                    <div class="question-text">Write the reaction for X.</div>
+                </div>
+            </div>
+            <div class="answer-row">
+                <div class="ans-label-box">Ans</div>
+                <div class="answer-text">
+                    <div class="chem-eq">CH3-CH2-OH + O2 --> CH3-COOH + H2O</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Math worked-solution block -->
+        <div class="sub-question-block">
+            <div class="sub-q-row">
+                <div class="sub-q-number">
+                    <div class="q-prefix">Q</div>
+                    <div class="q-num">3</div>
+                    <div class="q-marks">5 marks</div>
+                </div>
+                <div class="question-content">
+                    <div class="question-text">Solve for x.</div>
+                </div>
+            </div>
+            <div class="answer-row">
+                <div class="ans-label-box">Ans</div>
+                <div class="answer-text">
+                    <div class="math-eq"><span class="ans-step-label">Step 1:</span> 2x + 3 = 7
+<span class="ans-step-label">Step 2:</span> 2x = 4
+<span class="ans-step-label">Step 3:</span> x = 2</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Comparison / difference table -->
+        <div class="sub-question-block">
+            <div class="sub-q-row">
+                <div class="sub-q-number">
+                    <div class="q-prefix">Q</div>
+                    <div class="q-num">4</div>
+                    <div class="q-marks">5 marks</div>
+                </div>
+                <div class="question-content">
+                    <div class="question-text">Differentiate between A and B.</div>
+                </div>
+            </div>
+            <div class="answer-row">
+                <div class="ans-label-box">Ans</div>
+                <div class="answer-text">
+                    <table class="diff-table">
+                        <tr><th>A</th><th>B</th></tr>
+                        <tr><td>Point about A</td><td>Point about B</td></tr>
+                        <tr><td>Point about A</td><td>Point about B</td></tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </div><!-- /content-area -->
+</div><!-- /page -->
+</body>
+</html>
